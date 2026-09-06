@@ -10,6 +10,7 @@ from houdocs.docs.repository import DocumentRepository
 from houdocs.node.index import NodeIndexer
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
+from houdocs.python_docs.parser import _group_signatures
 from houdocs.python_docs.repository import PythonRepository
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.repository import VexRepository
@@ -30,12 +31,16 @@ def test_specialized_schema_is_created_in_docs_database(tmp_path: Path) -> None:
     with sqlite3.connect(tmp_path / "docs.db") as connection:
         tables = {
             row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
         }
     assert {"node_documents", "python_documents", "vex_documents"}.issubset(tables)
 
 
-def test_node_index_resolves_runtime_parameters_and_writes_unresolved(tmp_path: Path) -> None:
+def test_node_index_resolves_runtime_parameters_and_writes_unresolved(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     source.mkdir()
     node_path = source / "nodes" / "sop"
@@ -103,7 +108,9 @@ Unknown:
     ).index_all(
         runtime_rows,
         houdini_version="22.0.429",
-        on_warning=lambda kind, detail, document, symbol: warnings.append((kind, symbol)),
+        on_warning=lambda kind, detail, document, symbol: warnings.append(
+            (kind, symbol)
+        ),
     )
 
     assert result["documents"] == 1
@@ -115,7 +122,9 @@ Unknown:
     assert result["related_resolved"] == 1
     assert warnings == [("node_parameter_unresolved", "Sop/example")]
 
-    unresolved = json.loads(Path(str(result["unresolved_file"])).read_text(encoding="utf-8"))
+    unresolved = json.loads(
+        Path(str(result["unresolved_file"])).read_text(encoding="utf-8")
+    )
     assert unresolved["unresolved"]["parameters"][0]["label"] == "Unknown"
     assert unresolved["unresolved"]["parameters"][0]["reason"] == "no_houdini_match"
 
@@ -185,7 +194,15 @@ Legacy Label:
     assert persisted["unresolved"]["parameters"] == []
 
 
-def test_python_index_builds_direct_symbol_rows_without_body_duplication(tmp_path: Path) -> None:
+def test_python_signature_grouping_ignores_bookish_code_blocks() -> None:
+    grouped = _group_signatures("method(value)\n{{{\nprint('example')\n}}}")
+
+    assert grouped == {"method": ["method(value)"]}
+
+
+def test_python_index_builds_direct_symbol_rows_without_body_duplication(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     hom = source / "hom" / "hou"
     hom.mkdir(parents=True)
@@ -225,7 +242,9 @@ setNamedInput(input_name, item_to_become_input, output_name_or_index):
         function = connection.execute(
             "SELECT * FROM python_documents WHERE symbol = ?", ("hou.node",)
         ).fetchone()
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(python_documents)")}
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(python_documents)")
+        }
     assert method["kind"] == "method"
     assert method["parent_symbol"] == "hou.Node"
     assert len(json.loads(method["signatures_json"])) == 2
@@ -233,7 +252,9 @@ setNamedInput(input_name, item_to_become_input, output_name_or_index):
     assert "text" not in columns
 
 
-def test_vex_index_preserves_overloads_context_group_tags_and_status(tmp_path: Path) -> None:
+def test_vex_index_preserves_overloads_context_group_tags_and_status(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     vex = source / "vex" / "functions"
     vex.mkdir(parents=True)
@@ -267,7 +288,9 @@ float xyzdist(int geometry, vector origin, int &prim, vector &uv):
         row = connection.execute(
             "SELECT * FROM vex_documents WHERE function_name = 'xyzdist'"
         ).fetchone()
-        columns = {item[1] for item in connection.execute("PRAGMA table_info(vex_documents)")}
+        columns = {
+            item[1] for item in connection.execute("PRAGMA table_info(vex_documents)")
+        }
     assert len(json.loads(row["signatures_json"])) == 2
     assert json.loads(row["contexts_json"]) == ["sop", "surface"]
     assert row["group_name"] == "geometry"

@@ -13,7 +13,9 @@ _PYTHON_SIGNATURE_RE = re.compile(
 )
 
 
-def parse_python_document(document: Document, source: str) -> list[PythonDocumentRecord]:
+def parse_python_document(
+    document: Document, source: str
+) -> list[PythonDocumentRecord]:
     properties = _page_properties(source)
     reference_type = properties.get("type", "").casefold()
     if reference_type not in {"homclass", "homfunction", "hommodule"}:
@@ -95,7 +97,17 @@ def _page_symbol(document: Document, source: str) -> str | None:
 def _group_signatures(source: str) -> dict[str, list[str]]:
     grouped: dict[str, list[str]] = {}
     seen: dict[str, set[str]] = {}
+    in_code = False
     for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("{{{"):
+            in_code = True
+            continue
+        if stripped.startswith("}}}"):
+            in_code = False
+            continue
+        if in_code:
+            continue
         parsed = _python_signature(line)
         if parsed is None:
             continue

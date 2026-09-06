@@ -125,6 +125,16 @@ class HybridSearchBackend:
             )
             self.dense.upsert(profile, group, vectors)
 
+    def missing_embedding_count(self, entries: Sequence[SearchEntry]) -> int:
+        grouped: dict[str, set[str]] = {}
+        for entry in entries:
+            grouped.setdefault(entry.embedding_profile, set()).add(entry.content_hash)
+        missing = 0
+        for profile, content_hashes in grouped.items():
+            cached = self._cached_hashes(profile, sorted(content_hashes))
+            missing += len(content_hashes - cached)
+        return missing
+
     def entry_ids(self, namespace: str) -> list[str]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -306,6 +316,28 @@ class HybridSearchBackend:
             if embedding_progress is not None:
                 embedding_progress(len(missing_hashes), elapsed)
         return cached
+
+    def _cached_hashes(
+        self,
+        profile: str,
+        content_hashes: Sequence[str],
+    ) -> set[str]:
+        if not content_hashes:
+            return set()
+        found: set[str] = set()
+        for start in range(0, len(content_hashes), 500):
+            batch = content_hashes[start : start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            with self._connect() as connection:
+                rows = connection.execute(
+                    f"""
+                    SELECT content_hash FROM embedding_cache
+                    WHERE embedding_profile_id = ? AND content_hash IN ({placeholders})
+                    """,
+                    (profile, *batch),
+                ).fetchall()
+            found.update(str(row["content_hash"]) for row in rows)
+        return found
 
     def _vectors_for_hashes(
         self,

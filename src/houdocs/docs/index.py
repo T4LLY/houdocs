@@ -11,6 +11,7 @@ from houdocs.docs.source import CachedDocument, cache_bookish_trees
 
 
 IssueCallback = Callable[[str, str, str | None], None]
+ProgressCallback = Callable[[int, int], None]
 
 
 def _document_id(relative_path: str) -> str:
@@ -48,6 +49,7 @@ class DocumentIndexer:
         *,
         houdini_version: str | None = None,
         on_error: IssueCallback | None = None,
+        progress: ProgressCallback | None = None,
     ) -> dict[str, int]:
         source_roots = (sources,) if isinstance(sources, Path) else tuple(sources)
         cached = cache_bookish_trees(
@@ -60,11 +62,16 @@ class DocumentIndexer:
         indexed = 0
         skipped = 0
         failed = 0
+        total = len(cached)
+        if progress is not None:
+            progress(0, total)
 
-        for item in cached:
+        for position, item in enumerate(cached, start=1):
             existing = self.repository.document_for_path(item.relative_path)
             if self._is_current_document(existing, item):
                 skipped += 1
+                if progress is not None:
+                    progress(position, total)
                 continue
 
             document_id = existing.document_id if existing else _document_id(item.relative_path)
@@ -81,6 +88,8 @@ class DocumentIndexer:
                         f"{type(exc).__name__}: {exc}",
                         item.relative_path,
                     )
+                if progress is not None:
+                    progress(position, total)
                 continue
 
             document = Document(
@@ -93,6 +102,8 @@ class DocumentIndexer:
             )
             self.repository.replace_document(document, sections)
             indexed += 1
+            if progress is not None:
+                progress(position, total)
 
         return {
             "total": len(cached),

@@ -6,6 +6,7 @@ from houdocs.config import HouDocsConfig
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
+from houdocs.init.progress import InitProgress
 from houdocs.init.report import InitReporter, write_json_atomic
 from houdocs.init.runtime import HoudiniRuntime, RuntimeSnapshot
 from houdocs.node.index import NodeIndexer
@@ -37,8 +38,12 @@ class InitService:
         requested_version: str | None,
         *,
         config: HouDocsConfig,
+        progress: InitProgress | None = None,
     ) -> dict[str, object]:
+        progress_view = progress or InitProgress(False)
+        progress_view.show("Discovering Houdini installation")
         installation = self.runtime.select(requested_version)
+        progress_view.show(f"Starting and inspecting Houdini {installation.version_string}")
         snapshot = self.runtime.probe(
             installation,
             requested_version=requested_version,
@@ -58,12 +63,14 @@ class InitService:
             parser=BookishDocumentParser(),
             cache_directory=paths.docs,
         )
+        progress_view.show("Reading Houdini help archives")
         documents = indexer.index_all(
             snapshot.help_directories,
             houdini_version=snapshot.houdini_version,
             on_error=lambda kind, detail, document: reporter.error(
                 kind, detail, document=document
             ),
+            progress=progress_view.indexing if progress_view.enabled else None,
         )
 
         warning = lambda kind, detail, document, symbol: reporter.warning(
@@ -72,6 +79,7 @@ class InitService:
         error = lambda kind, detail, document, symbol: reporter.error(
             kind, detail, document=document, symbol=symbol
         )
+        progress_view.show("Indexing node documentation")
         node = NodeIndexer(
             documents=repository,
             repository=NodeRepository(paths.database),
@@ -83,17 +91,20 @@ class InitService:
             on_warning=warning,
             on_error=error,
         )
+        progress_view.show("Indexing Python/HOM documentation")
         python = PythonIndexer(
             documents=repository,
             repository=PythonRepository(paths.database),
             docs_directory=paths.docs,
         ).index_all(on_warning=warning, on_error=error)
+        progress_view.show("Indexing VEX documentation")
         vex = VexIndexer(
             documents=repository,
             repository=VexRepository(paths.database),
             docs_directory=paths.docs,
         ).index_all(on_warning=warning, on_error=error)
 
+        progress_view.show("Building search index")
         search_backend = HybridSearchBackend(
             database=paths.search_database,
             embeddings=Model2VecEmbeddingProvider(),
@@ -106,7 +117,9 @@ class InitService:
             backend=search_backend,
             store=SearchStore(paths.search_database),
             embedding_profile=config.search_embedding.docs_profile,
-        ).index_all()
+        ).index_all(
+            embedding_progress=progress_view.embedding if progress_view.enabled else None
+        )
 
         report_path = paths.reports / "init-report.json"
         report = reporter.build(
@@ -134,6 +147,7 @@ class InitService:
             },
         )
         write_json_atomic(report_path, report)
+        progress_view.show("HouDocs initialization complete")
         return report
 
     @staticmethod

@@ -173,3 +173,20 @@ def test_docs_database_contains_documents_and_sections_schema(tmp_path: Path) ->
             )
         }
     assert {"documents", "sections"}.issubset(tables)
+
+
+def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "a.txt").write_text("= A =\n", encoding="utf-8")
+    (source / "b.txt").write_text("= B =\n", encoding="utf-8")
+    progress: list[tuple[int, int]] = []
+    indexer = DocumentIndexer(
+        repository=DocumentRepository(tmp_path / "docs.db"),
+        parser=BookishDocumentParser(),
+        cache_directory=tmp_path / "cache",
+    )
+
+    indexer.index_all(source, progress=lambda current, total: progress.append((current, total)))
+
+    assert progress == [(0, 2), (1, 2), (2, 2)]

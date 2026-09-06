@@ -9,6 +9,7 @@ from houdocs.config import HouDocsConfig, load_config, resolve_requested_version
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
+from houdocs.init.progress import InitProgress
 from houdocs.init.service import InitService
 from houdocs.node.read import NodeReader
 from houdocs.node.repository import NodeRepository
@@ -81,11 +82,21 @@ def init_command(
         str | None,
         typer.Option("--houdini-version", help="Houdini version to initialize."),
     ] = None,
+    progress: Annotated[
+        bool,
+        typer.Option("--progress", help="Show interactive initialization progress on a TTY."),
+    ] = False,
 ) -> None:
+    progress_view = InitProgress(progress)
+
     def action() -> None:
-        config = load_config()
-        version = resolve_requested_version(houdini_version, config=config)
-        _emit(InitService().run(version, config=config))
+        try:
+            config = load_config()
+            version = resolve_requested_version(houdini_version, config=config)
+            result = InitService().run(version, config=config, progress=progress_view)
+        finally:
+            progress_view.finish()
+        _emit(result)
 
     _invoke(action)
 

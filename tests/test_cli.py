@@ -23,6 +23,7 @@ def test_init_exposes_version_but_not_connection_target_options() -> None:
 
     assert result.exit_code == 0
     assert "--houdini-version" in result.stdout
+    assert "--progress" in result.stdout
     assert "--host" not in result.stdout
     assert "--port" not in result.stdout
     assert "--executable" not in result.stdout

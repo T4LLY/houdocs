@@ -118,3 +118,36 @@ def test_search_reuses_unchanged_entries_and_reindexes_profile_change(tmp_path: 
     assert first["indexed"] == 1
     assert second == {"entries": 1, "indexed": 0, "skipped": 1, "removed": 0}
     assert third["indexed"] == 1
+
+
+def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -> None:
+    docs = DocumentRepository(tmp_path / "docs.db")
+    document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
+    docs.replace_document(
+        document,
+        [
+            _section("doc", 0, "Alpha", "alpha"),
+            _section("doc", 1, "Beta", "beta"),
+        ],
+    )
+    backend = HybridSearchBackend(
+        database=tmp_path / "search.db",
+        embeddings=FakeEmbeddings(),
+        dense_index=FakeDense(),
+    )
+    store = SearchStore(tmp_path / "search.db")
+    first_progress: list[tuple[int, int, int, float]] = []
+    second_progress: list[tuple[int, int, int, float]] = []
+
+    indexer = SearchIndexer(
+        documents=docs,
+        backend=backend,
+        store=store,
+        embedding_profile="p1",
+    )
+    indexer.index_all(embedding_progress=lambda *values: first_progress.append(values))
+    indexer.index_all(embedding_progress=lambda *values: second_progress.append(values))
+
+    assert first_progress[0] == (0, 2, 0, 0.0)
+    assert first_progress[-1][0:3] == (2, 2, 2)
+    assert second_progress == [(0, 0, 0, 0.0)]

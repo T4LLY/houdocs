@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Annotated, Any, Callable
 
 import typer
@@ -33,7 +34,9 @@ app = typer.Typer(
 
 
 def _emit(value: Any, *, exit_code: int | None = None) -> None:
-    typer.echo(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    typer.echo(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
     if exit_code is not None:
         raise typer.Exit(exit_code)
 
@@ -54,6 +57,14 @@ def _invoke(action: Callable[[], None]) -> None:
         action()
     except HouDocsError as exc:
         _fail(exc)
+    except sqlite3.Error as exc:
+        _fail(
+            HouDocsError(
+                "docs_database_error",
+                "Unable to access documentation database.",
+                str(exc),
+            )
+        )
 
 
 def _init_summary(report: dict[str, object]) -> dict[str, object]:
@@ -115,7 +126,9 @@ def init_command(
     ] = None,
     progress: Annotated[
         bool,
-        typer.Option("--progress", help="Show interactive initialization progress on a TTY."),
+        typer.Option(
+            "--progress", help="Show interactive initialization progress on a TTY."
+        ),
     ] = False,
 ) -> None:
     progress_view = InitProgress(progress)

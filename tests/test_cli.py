@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from houdocs.cli import _init_summary, app
+from houdocs.docs.repository import DocumentRepository
+from houdocs.paths import VersionPaths
 
 
 runner = CliRunner()
@@ -62,6 +65,27 @@ def test_offline_command_without_index_fails_with_machine_readable_error() -> No
     assert payload["code"] == "docs_index_missing"
 
 
+def test_offline_command_serializes_raw_sqlite_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    DocumentRepository(paths.database)
+
+    def fail_read(self, title):
+        del self, title
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(DocumentRepository, "documents_for_title", fail_read)
+
+    result = runner.invoke(app, ["read", "Page"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["code"] == "docs_database_error"
+    assert payload["detail"] == "database is locked"
+
+
 def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     search = runner.invoke(app, ["search", "--help"])
     read = runner.invoke(app, ["read", "--help"])
@@ -69,7 +93,14 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     python = runner.invoke(app, ["python", "--help"])
     vex = runner.invoke(app, ["vex", "--help"])
 
-    assert search.exit_code == read.exit_code == node.exit_code == python.exit_code == vex.exit_code == 0
+    assert (
+        search.exit_code
+        == read.exit_code
+        == node.exit_code
+        == python.exit_code
+        == vex.exit_code
+        == 0
+    )
     assert "QUERY" in search.stdout
     assert "PAGE" in read.stdout and "[SECTION]" in read.stdout
     for output in (search.stdout, read.stdout, node.stdout, python.stdout, vex.stdout):

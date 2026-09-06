@@ -14,6 +14,14 @@ _VERSION_RE = re.compile(r"^\d+\.\d+(?:\.\d+)?$")
 
 _DEFAULT_CONFIG = """[houdini]
 version = ""
+
+[search.embedding]
+docs_profile = "minishlab/potion-retrieval-32M"
+
+[search.hybrid]
+rrf_k = 60
+candidate_multiplier = 8
+candidate_min = 32
 """
 
 
@@ -23,8 +31,22 @@ class HoudiniConfig:
 
 
 @dataclass(frozen=True)
+class SearchEmbeddingConfig:
+    docs_profile: str
+
+
+@dataclass(frozen=True)
+class SearchHybridConfig:
+    rrf_k: int
+    candidate_multiplier: int
+    candidate_min: int
+
+
+@dataclass(frozen=True)
 class HouDocsConfig:
     houdini: HoudiniConfig
+    search_embedding: SearchEmbeddingConfig
+    search_hybrid: SearchHybridConfig
 
 
 def default_config_path() -> Path:
@@ -66,7 +88,7 @@ def load_config(
     cwd: Path | None = None,
 ) -> HouDocsConfig:
     config_path = ensure_config_file(path)
-    raw = _read_toml(config_path)
+    raw = _deep_merge(tomllib.loads(_DEFAULT_CONFIG), _read_toml(config_path))
 
     local_path = local_config_path(cwd)
     if local_path.exists():
@@ -78,10 +100,21 @@ def load_config(
         raw = _deep_merge(raw, _read_toml(local_path))
 
     houdini = _table(raw, "houdini")
+    search = _table(raw, "search")
+    embedding = _table(search, "embedding")
+    hybrid = _table(search, "hybrid")
     return HouDocsConfig(
         houdini=HoudiniConfig(
             version=_optional_version(houdini, "version"),
-        )
+        ),
+        search_embedding=SearchEmbeddingConfig(
+            docs_profile=_string(embedding, "docs_profile"),
+        ),
+        search_hybrid=SearchHybridConfig(
+            rrf_k=_positive_int(hybrid, "rrf_k", allow_zero=True),
+            candidate_multiplier=_positive_int(hybrid, "candidate_multiplier"),
+            candidate_min=_positive_int(hybrid, "candidate_min"),
+        ),
     )
 
 
@@ -158,3 +191,24 @@ def _optional_version(mapping: dict[str, object], key: str) -> str | None:
             f"config.toml {key} contains an invalid Houdini version: {value}",
             detail=exc.error.detail,
         ) from exc
+
+
+def _string(mapping: dict[str, object], key: str) -> str:
+    value = mapping.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise HouDocsError("invalid_config", f"config.toml {key} must be a non-empty string.")
+    return value.strip()
+
+
+def _positive_int(
+    mapping: dict[str, object],
+    key: str,
+    *,
+    allow_zero: bool = False,
+) -> int:
+    value = mapping.get(key)
+    minimum = 0 if allow_zero else 1
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        relation = ">= 0" if allow_zero else "> 0"
+        raise HouDocsError("invalid_config", f"config.toml {key} must be an integer {relation}.")
+    return value

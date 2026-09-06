@@ -50,6 +50,26 @@ class VexRepository:
                 detail=str(exc),
             ) from exc
 
+
+    def get(self, function_name: str) -> VexDocumentRecord | None:
+        with connect(self.database) as connection:
+            row = connection.execute(
+                "SELECT * FROM vex_documents WHERE lower(function_name) = lower(?)",
+                (function_name.strip(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return VexDocumentRecord(
+            function_name=str(row["function_name"]),
+            document_id=str(row["document_id"]),
+            signatures=tuple(json.loads(row["signatures_json"] or "[]")),
+            contexts=tuple(json.loads(row["contexts_json"] or "[]")),
+            group_name=row["group_name"],
+            tags=tuple(json.loads(row["tags_json"] or "[]")),
+            status=row["status"],
+            metadata=dict(json.loads(row["metadata_json"] or "{}")),
+        )
+
     def count(self) -> int:
         with connect(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM vex_documents").fetchone()

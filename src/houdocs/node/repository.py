@@ -80,6 +80,37 @@ class NodeRepository:
                 detail=str(exc),
             ) from exc
 
+
+    def resolve(self, node_type: str) -> tuple[str, dict[str, object]] | None:
+        key = node_type.strip()
+        with connect(self.database) as connection:
+            row = connection.execute(
+                """
+                SELECT document_id, metadata_json
+                FROM node_documents
+                WHERE lower(node_type) = lower(?) OR lower(houdini_name) = lower(?)
+                ORDER BY node_type
+                LIMIT 1
+                """,
+                (key, key),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["metadata_json"] or "{}")
+        except json.JSONDecodeError as exc:
+            raise HouDocsError(
+                "docs_database_error",
+                f"Invalid node metadata JSON for: {node_type}",
+                detail=str(exc),
+            ) from exc
+        if not isinstance(payload, dict):
+            raise HouDocsError(
+                "docs_database_error",
+                f"Invalid node metadata payload for: {node_type}",
+            )
+        return str(row["document_id"]), payload
+
     def count(self) -> int:
         with connect(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM node_documents").fetchone()

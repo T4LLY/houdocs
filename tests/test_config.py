@@ -20,7 +20,13 @@ def test_default_config_is_created_without_selecting_a_version(tmp_path: Path) -
     config = load_config(config_path, cwd=tmp_path)
 
     assert config.houdini.version is None
-    assert config_path.read_text(encoding="utf-8") == '[houdini]\nversion = ""\n'
+    assert config_path.read_text(encoding="utf-8") == (
+        '[houdini]\nversion = ""\n\n'
+        '[search.embedding]\ndocs_profile = "minishlab/potion-retrieval-32M"\n\n'
+        '[search.hybrid]\nrrf_k = 60\ncandidate_multiplier = 8\ncandidate_min = 32\n'
+    )
+    assert config.search_embedding.docs_profile == "minishlab/potion-retrieval-32M"
+    assert config.search_hybrid.rrf_k == 60
 
 
 def test_current_directory_version_overrides_global_version(tmp_path: Path) -> None:

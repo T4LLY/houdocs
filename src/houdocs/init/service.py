@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from houdocs.config import HouDocsConfig
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
@@ -15,6 +16,10 @@ from houdocs.python_docs.repository import PythonRepository
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.repository import VexRepository
 from houdocs.paths import VersionPaths
+from houdocs.search.embedding import Model2VecEmbeddingProvider
+from houdocs.search.hybrid import HybridSearchBackend
+from houdocs.search.index import SearchIndexer
+from houdocs.search.store import SearchStore
 
 
 class InitService:
@@ -27,7 +32,12 @@ class InitService:
         self.runtime = runtime or HoudiniRuntime()
         self.data_root = data_root
 
-    def run(self, requested_version: str | None) -> dict[str, object]:
+    def run(
+        self,
+        requested_version: str | None,
+        *,
+        config: HouDocsConfig,
+    ) -> dict[str, object]:
         installation = self.runtime.select(requested_version)
         snapshot = self.runtime.probe(
             installation,
@@ -84,6 +94,20 @@ class InitService:
             docs_directory=paths.docs,
         ).index_all(on_warning=warning, on_error=error)
 
+        search_backend = HybridSearchBackend(
+            database=paths.search_database,
+            embeddings=Model2VecEmbeddingProvider(),
+            rrf_k=config.search_hybrid.rrf_k,
+            candidate_multiplier=config.search_hybrid.candidate_multiplier,
+            candidate_min=config.search_hybrid.candidate_min,
+        )
+        search = SearchIndexer(
+            documents=repository,
+            backend=search_backend,
+            store=SearchStore(paths.search_database),
+            embedding_profile=config.search_embedding.docs_profile,
+        ).index_all()
+
         report_path = paths.reports / "init-report.json"
         report = reporter.build(
             houdini_version=snapshot.houdini_version,
@@ -99,9 +123,11 @@ class InitService:
             node=node,
             python=python,
             vex=vex,
+            search=search,
             artifacts={
                 "docs_database": str(paths.database),
                 "docs_cache": str(paths.docs),
+                "search_database": str(paths.search_database),
                 "node_types": str(node_dump_path),
                 "node_unresolved": str(unresolved_path(paths.reports, snapshot.houdini_version)),
                 "report": str(report_path),

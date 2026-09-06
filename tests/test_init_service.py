@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from houdocs.config import load_config
 from houdocs.init.runtime import HoudiniInstallation, RuntimeSnapshot
 from houdocs.init.service import InitService
 
@@ -65,7 +66,10 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     )
     runtime = FakeRuntime(installation, snapshot)
 
-    result = InitService(runtime=runtime, data_root=tmp_path / "data").run("22.0.429")
+    config = load_config(tmp_path / "config.toml", cwd=tmp_path)
+    result = InitService(runtime=runtime, data_root=tmp_path / "data").run(
+        "22.0.429", config=config
+    )
 
     version_root = tmp_path / "data" / "versions" / "22.0.429"
     report_path = version_root / "reports" / "init-report.json"
@@ -73,7 +77,7 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     assert report_path.is_file()
     assert dump_path.is_file()
     assert (version_root / "docs.db").is_file()
-    assert not (version_root / "search.db").exists()
+    assert (version_root / "search.db").is_file()
 
     persisted_report = json.loads(report_path.read_text(encoding="utf-8"))
     persisted_dump = json.loads(dump_path.read_text(encoding="utf-8"))
@@ -103,6 +107,12 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
         "functions": 0,
         "duplicates": 0,
         "failed": 0,
+    }
+    assert result["search"] == {
+        "entries": 0,
+        "indexed": 0,
+        "skipped": 0,
+        "removed": 0,
     }
     assert Path(result["artifacts"]["node_unresolved"]).is_file()
     assert result["issue_counts"] == {"warnings": 1, "errors": 0}

@@ -49,6 +49,25 @@ class PythonRepository:
                 detail=str(exc),
             ) from exc
 
+
+    def get(self, symbol: str) -> PythonDocumentRecord | None:
+        with connect(self.database) as connection:
+            row = connection.execute(
+                "SELECT * FROM python_documents WHERE lower(symbol) = lower(?)",
+                (symbol.strip(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return PythonDocumentRecord(
+            symbol=str(row["symbol"]),
+            document_id=str(row["document_id"]),
+            parent_symbol=row["parent_symbol"],
+            member_name=row["member_name"],
+            kind=str(row["kind"]),
+            signatures=tuple(json.loads(row["signatures_json"] or "[]")),
+            metadata=dict(json.loads(row["metadata_json"] or "{}")),
+        )
+
     def count(self) -> int:
         with connect(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM python_documents").fetchone()

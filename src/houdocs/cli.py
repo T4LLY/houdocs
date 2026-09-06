@@ -5,9 +5,21 @@ from typing import Annotated, Any, Callable
 
 import typer
 
-from houdocs.config import load_config, resolve_requested_version
+from houdocs.config import HouDocsConfig, load_config, resolve_requested_version
+from houdocs.docs.read import DocumentReader
+from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
 from houdocs.init.service import InitService
+from houdocs.node.read import NodeReader
+from houdocs.node.repository import NodeRepository
+from houdocs.paths import VersionPaths, resolve_initialized_version
+from houdocs.python_docs.read import PythonDocumentReader
+from houdocs.python_docs.repository import PythonRepository
+from houdocs.search.embedding import Model2VecEmbeddingProvider
+from houdocs.search.hybrid import HybridSearchBackend
+from houdocs.search.service import DocumentSearchService
+from houdocs.vex_docs.read import VexDocumentReader
+from houdocs.vex_docs.repository import VexRepository
 
 
 app = typer.Typer(
@@ -43,11 +55,23 @@ def _invoke(action: Callable[[], None]) -> None:
         _fail(exc)
 
 
-def _not_implemented(command: str, *, detail: str | None = None) -> None:
-    raise HouDocsError(
-        "feature_not_implemented",
-        f"houdocs {command} is not implemented yet.",
-        detail=detail,
+def _offline_paths(config: HouDocsConfig) -> VersionPaths:
+    version = resolve_initialized_version(config.houdini.version)
+    paths = VersionPaths.for_version(version)
+    if not paths.database.is_file():
+        raise HouDocsError("docs_index_missing", "Run houdocs init first.")
+    return paths
+
+
+def _search_backend(paths: VersionPaths, config: HouDocsConfig) -> HybridSearchBackend:
+    if not paths.search_database.is_file():
+        raise HouDocsError("docs_index_missing", "Run houdocs init first.")
+    return HybridSearchBackend(
+        database=paths.search_database,
+        embeddings=Model2VecEmbeddingProvider(),
+        rrf_k=config.search_hybrid.rrf_k,
+        candidate_multiplier=config.search_hybrid.candidate_multiplier,
+        candidate_min=config.search_hybrid.candidate_min,
     )
 
 
@@ -61,35 +85,85 @@ def init_command(
     def action() -> None:
         config = load_config()
         version = resolve_requested_version(houdini_version, config=config)
-        _emit(InitService().run(version))
+        _emit(InitService().run(version, config=config))
 
     _invoke(action)
 
 
 @app.command("search")
 def search_command(query: str) -> None:
-    _invoke(lambda: _not_implemented("search", detail=f"query={query}"))
+    def action() -> None:
+        config = load_config()
+        paths = _offline_paths(config)
+        repository = DocumentRepository(paths.database)
+        service = DocumentSearchService(
+            repository=repository,
+            backend=_search_backend(paths, config),
+        )
+        _emit(service.search(query))
+
+    _invoke(action)
 
 
 @app.command("read")
-def read_command(page: str, section: str | None = None) -> None:
-    detail = f"page={page}" + (f" section={section}" if section else "")
-    _invoke(lambda: _not_implemented("read", detail=detail))
+def read_command(
+    page: str,
+    section: Annotated[str | None, typer.Argument()] = None,
+) -> None:
+    def action() -> None:
+        config = load_config()
+        paths = _offline_paths(config)
+        _emit(DocumentReader(DocumentRepository(paths.database)).read(page, section))
+
+    _invoke(action)
 
 
 @app.command("node")
 def node_command(node_type: str) -> None:
-    _invoke(lambda: _not_implemented("node", detail=f"node_type={node_type}"))
+    def action() -> None:
+        config = load_config()
+        paths = _offline_paths(config)
+        documents = DocumentRepository(paths.database)
+        _emit(
+            NodeReader(
+                documents=documents,
+                repository=NodeRepository(paths.database),
+            ).read(node_type)
+        )
+
+    _invoke(action)
 
 
 @app.command("python")
 def python_command(symbol: str) -> None:
-    _invoke(lambda: _not_implemented("python", detail=f"symbol={symbol}"))
+    def action() -> None:
+        config = load_config()
+        paths = _offline_paths(config)
+        documents = DocumentRepository(paths.database)
+        _emit(
+            PythonDocumentReader(
+                documents=documents,
+                repository=PythonRepository(paths.database),
+            ).read(symbol)
+        )
+
+    _invoke(action)
 
 
 @app.command("vex")
 def vex_command(function: str) -> None:
-    _invoke(lambda: _not_implemented("vex", detail=f"function={function}"))
+    def action() -> None:
+        config = load_config()
+        paths = _offline_paths(config)
+        documents = DocumentRepository(paths.database)
+        _emit(
+            VexDocumentReader(
+                documents=documents,
+                repository=VexRepository(paths.database),
+            ).read(function)
+        )
+
+    _invoke(action)
 
 
 def main() -> None:

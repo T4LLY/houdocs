@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from houdocs.errors import HouDocsError
-from houdocs.paths import VersionPaths
+from houdocs.paths import VersionPaths, resolve_initialized_version
 
 
 def test_version_paths_are_fully_isolated_by_version(tmp_path: Path) -> None:
@@ -35,3 +35,14 @@ def test_version_path_rejects_path_like_values(tmp_path: Path) -> None:
         VersionPaths.for_version("../22.0.429", data_root=tmp_path)
 
     assert caught.value.error.code == "invalid_houdini_version"
+
+
+def test_reference_version_selects_latest_initialized_build(tmp_path: Path) -> None:
+    for version in ("22.0.400", "22.0.429", "21.0.547"):
+        root = tmp_path / "versions" / version
+        root.mkdir(parents=True)
+        (root / "docs.db").write_bytes(b"")
+
+    assert resolve_initialized_version("22.0", data_root=tmp_path) == "22.0.429"
+    assert resolve_initialized_version(None, data_root=tmp_path) == "22.0.429"
+    assert resolve_initialized_version("21.0.547", data_root=tmp_path) == "21.0.547"

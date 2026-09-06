@@ -52,6 +52,50 @@ class DocumentRepository:
             ).fetchall()
         return _sections_from_rows(rows, document.kind, document.relative_path)
 
+
+    def documents_for_title(self, title: str) -> list[Document]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM documents WHERE title = ? COLLATE NOCASE ORDER BY path",
+                (title.strip(),),
+            ).fetchall()
+        return [self._document(row) for row in rows]
+
+    def section(self, section_id: str) -> DocumentSection:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT document_id FROM sections WHERE id = ?",
+                (section_id,),
+            ).fetchone()
+        if row is None:
+            raise HouDocsError("document_section_not_found", f"Section not found: {section_id}")
+        for section in self.sections_for_document(str(row["document_id"])):
+            if section.section_id == section_id:
+                return section
+        raise HouDocsError("document_section_not_found", f"Section not found: {section_id}")
+
+    def sections_matching(self, document_id: str, section_name: str) -> list[DocumentSection]:
+        key = section_name.casefold().strip().lstrip('#')
+        sections = self.sections_for_document(document_id)
+        matches = [
+            section
+            for section in sections
+            if key
+            in {
+                str(section.anchor or "").casefold().strip().strip("/"),
+                str(section.heading or "").casefold().strip().strip("/"),
+                "/".join(section.heading_path).casefold().strip().strip("/"),
+                "/".join(section.heading_path[1:]).casefold().strip().strip("/"),
+            }
+        ]
+        return matches
+
+    def all_sections(self) -> list[DocumentSection]:
+        result: list[DocumentSection] = []
+        for document in self.all_documents():
+            result.extend(self.sections_for_document(document.document_id))
+        return result
+
     def document(self, document_id: str) -> Document:
         with self._connect() as connection:
             row = connection.execute(

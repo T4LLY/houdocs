@@ -48,3 +48,12 @@ Each hit SHALL return `section_id`, `score`, `document`, `heading`, `heading_pat
 - **WHEN** a documentation section matches the query
 - **THEN** the hit identifies the section and document metadata
 - **AND** the hit contains no `text` or `resource` field
+
+### Requirement: Bound SQLite lookup parameter counts
+
+Search indexing SHALL split large entry-ID and content-hash lookup sets into bounded batches before constructing SQLite `IN` clauses. The batching SHALL NOT change the set of matched entries or the resulting search index.
+
+#### Scenario: Initializing a documentation set larger than SQLite's variable limit
+- **WHEN** `houdocs init` needs to inspect more search entry IDs than SQLite accepts in one statement
+- **THEN** HouDocs queries those IDs in bounded batches
+- **AND** indexing continues without a `too many SQL variables` failure

@@ -19,6 +19,9 @@ from houdocs.search.rrf import reciprocal_rank_fusion
 from houdocs.search.store import ensure_search_schema
 
 
+_SQLITE_IN_BATCH_SIZE = 500
+
+
 @dataclass(frozen=True)
 class _StoredEntry:
     entry_id: str
@@ -250,28 +253,43 @@ class HybridSearchBackend:
     def _profiles_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, str]:
         if not entry_ids:
             return {}
-        placeholders = ",".join("?" for _ in entry_ids)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"SELECT entry_id, embedding_profile_id FROM search_entries WHERE entry_id IN ({placeholders})",
-                tuple(entry_ids),
-            ).fetchall()
-        return {str(row["entry_id"]): str(row["embedding_profile_id"]) for row in rows}
+        found: dict[str, str] = {}
+        for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
+            batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch)
+            with self._connect() as connection:
+                rows = connection.execute(
+                    f"SELECT entry_id, embedding_profile_id FROM search_entries WHERE entry_id IN ({placeholders})",
+                    tuple(batch),
+                ).fetchall()
+            found.update(
+                {str(row["entry_id"]): str(row["embedding_profile_id"]) for row in rows}
+            )
+        return found
 
     def _load_entries(self, entry_ids: Sequence[str]) -> dict[str, _StoredEntry]:
         if not entry_ids:
             return {}
-        placeholders = ",".join("?" for _ in entry_ids)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT se.*, sc.content
-                FROM search_entries se JOIN search_content sc ON sc.entry_id = se.entry_id
-                WHERE se.is_current = 1 AND se.entry_id IN ({placeholders})
-                """,
-                tuple(entry_ids),
-            ).fetchall()
-        return {entry.entry_id: entry for entry in (self._row_to_stored(row) for row in rows)}
+        found: dict[str, _StoredEntry] = {}
+        for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
+            batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch)
+            with self._connect() as connection:
+                rows = connection.execute(
+                    f"""
+                    SELECT se.*, sc.content
+                    FROM search_entries se JOIN search_content sc ON sc.entry_id = se.entry_id
+                    WHERE se.is_current = 1 AND se.entry_id IN ({placeholders})
+                    """,
+                    tuple(batch),
+                ).fetchall()
+            found.update(
+                {
+                    entry.entry_id: entry
+                    for entry in (self._row_to_stored(row) for row in rows)
+                }
+            )
+        return found
 
     def _ensure_vector_cache(
         self,
@@ -325,8 +343,8 @@ class HybridSearchBackend:
         if not content_hashes:
             return set()
         found: set[str] = set()
-        for start in range(0, len(content_hashes), 500):
-            batch = content_hashes[start : start + 500]
+        for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
+            batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
             with self._connect() as connection:
                 rows = connection.execute(
@@ -347,8 +365,8 @@ class HybridSearchBackend:
         if not content_hashes:
             return {}
         found: dict[str, np.ndarray] = {}
-        for start in range(0, len(content_hashes), 500):
-            batch = content_hashes[start : start + 500]
+        for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
+            batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
             with self._connect() as connection:
                 rows = connection.execute(

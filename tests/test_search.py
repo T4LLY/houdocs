@@ -151,3 +151,64 @@ def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -
     assert first_progress[0] == (0, 2, 0, 0.0)
     assert first_progress[-1][0:3] == (2, 2, 2)
     assert second_progress == [(0, 0, 0, 0.0)]
+
+
+def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import houdocs.search.hybrid as hybrid_module
+    from houdocs.db.connection import connect
+
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=FakeDense(),
+    )
+    entry_ids = [f"entry-{index}" for index in range(5)]
+    with connect(database) as connection:
+        for entry_id in entry_ids:
+            connection.execute(
+                """
+                INSERT INTO search_entries(
+                    entry_id, namespace, source_id, content_hash,
+                    embedding_profile_id, token_count, is_current, metadata_json
+                ) VALUES (?, 'docs', ?, ?, 'profile', 1, 1, '{}')
+                """,
+                (entry_id, entry_id, f"hash-{entry_id}"),
+            )
+            connection.execute(
+                "INSERT INTO search_content(entry_id, content) VALUES (?, ?)",
+                (entry_id, f"content-{entry_id}"),
+            )
+        connection.commit()
+
+    monkeypatch.setattr(hybrid_module, "_SQLITE_IN_BATCH_SIZE", 2)
+    original_connect = backend._connect
+    parameter_counts: list[int] = []
+
+    class GuardedConnection:
+        def __init__(self):
+            self.connection = original_connect()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self.connection.__exit__(exc_type, exc, tb)
+
+        def execute(self, sql, parameters=()):
+            parameter_counts.append(len(parameters))
+            if len(parameters) > 2:
+                raise AssertionError("lookup exceeded the configured SQLite batch size")
+            return self.connection.execute(sql, parameters)
+
+    monkeypatch.setattr(backend, "_connect", lambda: GuardedConnection())
+
+    profiles = backend._profiles_for_entry_ids(entry_ids)
+    loaded = backend._load_entries(entry_ids)
+
+    assert profiles == {entry_id: "profile" for entry_id in entry_ids}
+    assert set(loaded) == set(entry_ids)
+    assert parameter_counts == [2, 2, 1, 2, 2, 1]

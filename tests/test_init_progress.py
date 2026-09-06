@@ -20,7 +20,7 @@ def test_init_progress_updates_one_tty_line_without_ansi() -> None:
 
     output = stream.getvalue()
     assert output.startswith("\rReading Houdini help archives")
-    assert "\rIndexing Houdini help: 25/100 (25%)" in output
+    assert "\rParsing Houdini help documents: 25/100 (25%)" in output
     assert output.endswith("\n")
     assert "\x1b" not in output
 
@@ -71,8 +71,8 @@ def test_init_progress_reports_embedding_state_separately() -> None:
     progress.finish()
 
     output = stream.getvalue()
-    assert "Building search index: embedding 0/12 uncached" in output
-    assert "Building search index: embedding 12/12 uncached" in output
+    assert "Embedding search sections: 0/12 uncached" in output
+    assert "Embedding search sections: 12/12 uncached" in output
 
 
 def test_init_progress_reports_fully_cached_embeddings() -> None:
@@ -82,7 +82,7 @@ def test_init_progress_reports_fully_cached_embeddings() -> None:
     progress.embedding(0, 0, 0, 0.0)
     progress.finish()
 
-    assert "Building search index: embeddings cached" in stream.getvalue()
+    assert "Embedding search sections: cached" in stream.getvalue()
 
 
 def test_init_progress_is_silent_for_non_tty_streams() -> None:

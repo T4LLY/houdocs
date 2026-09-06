@@ -66,9 +66,9 @@ class InitProgress:
     ) -> None:
         del batch_count, batch_seconds
         if total == 0:
-            self.show("Building search index: embeddings cached")
+            self.show("Embedding search sections: cached")
             return
-        self.show(f"Building search index: embedding {current}/{total} uncached")
+        self.show(f"Embedding search sections: {current}/{total} uncached")
 
     def _render_indexing(self) -> None:
         percent = (
@@ -77,7 +77,7 @@ class InitProgress:
             else int(self._document_current * 100 / self._document_total)
         )
         message = (
-            f"Indexing Houdini help: {self._document_current}/{self._document_total} "
+            f"Parsing Houdini help documents: {self._document_current}/{self._document_total} "
             f"({percent}%)"
         )
         eta = self._document_eta_seconds()

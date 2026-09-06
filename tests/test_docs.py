@@ -10,6 +10,14 @@ from houdocs.docs.repository import DocumentRepository
 from houdocs.docs.source import cache_bookish_trees
 
 
+def test_bookish_page_properties_stop_at_title() -> None:
+    properties = BookishDocumentParser._page_properties(
+        ["#type: concept", "= Title =", "#stray: value", "== Details =="]
+    )
+
+    assert properties == {"type": "concept"}
+
+
 def test_cache_bookish_trees_preserves_help_root_priority(tmp_path: Path) -> None:
     high = tmp_path / "high"
     low = tmp_path / "low"
@@ -46,7 +54,9 @@ def test_loose_txt_precedes_archive_member_in_same_root(tmp_path: Path) -> None:
     assert cached[0].cached_path.read_text(encoding="utf-8") == "= Loose =\n"
 
 
-def test_invalid_archive_is_reported_and_other_documents_continue(tmp_path: Path) -> None:
+def test_invalid_archive_is_reported_and_other_documents_continue(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     source.mkdir()
     (source / "credits.txt").write_text("= Credits =\n", encoding="utf-8")
@@ -97,11 +107,15 @@ def test_classify_document_domains() -> None:
     assert classify_document("hom/hou/Node.txt") == "hom"
     assert classify_document("vex/functions/noise.txt") == "vex"
     assert classify_document("nodes/sop/attribwrangle.txt") == "node-doc"
-    assert classify_document("examples/nodes/sop/attribwrangle/Example.txt") == "example"
+    assert (
+        classify_document("examples/nodes/sop/attribwrangle/Example.txt") == "example"
+    )
     assert classify_document("basics/network.txt") == "concept"
 
 
-def test_document_indexer_is_incremental_and_removes_stale_documents(tmp_path: Path) -> None:
+def test_document_indexer_is_incremental_and_removes_stale_documents(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     source.mkdir()
     document_path = source / "concept.txt"
@@ -187,6 +201,8 @@ def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
         cache_directory=tmp_path / "cache",
     )
 
-    indexer.index_all(source, progress=lambda current, total: progress.append((current, total)))
+    indexer.index_all(
+        source, progress=lambda current, total: progress.append((current, total))
+    )
 
     assert progress == [(0, 2), (1, 2), (2, 2)]

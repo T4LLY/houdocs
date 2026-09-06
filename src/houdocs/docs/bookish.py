@@ -140,7 +140,9 @@ class BookishDocumentParser:
                 finish(current)
                 ordinal += 1
                 name = at_match.group("name").casefold()
-                heading = (at_match.group("title") or name.replace("_", " ").title()).strip()
+                heading = (
+                    at_match.group("title") or name.replace("_", " ").title()
+                ).strip()
                 heading_stack[1] = heading
                 for index in range(2, 6):
                     heading_stack[index] = None
@@ -219,7 +221,7 @@ class BookishDocumentParser:
         properties: dict[str, str] = {}
         for line in lines:
             heading_match = _HEADING_RE.match(line.rstrip())
-            if heading_match and len(heading_match.group("marks")) >= 2:
+            if heading_match:
                 break
             at_match = _AT_SECTION_RE.match(line.rstrip())
             if at_match and at_match.group("name").casefold() in _AT_SECTIONS:

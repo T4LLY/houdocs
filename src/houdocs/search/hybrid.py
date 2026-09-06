@@ -88,14 +88,22 @@ class HybridSearchBackend:
         for profile, entry_ids in moved.items():
             self.dense.remove(profile, entry_ids)
 
+        fts_rowids = self._fts_rowids_for_entry_ids([entry.id for entry in entries])
         with self._connect() as connection:
             for entry in entries:
                 metadata_json = json.dumps(
                     entry.metadata, ensure_ascii=False, sort_keys=True
                 )
-                connection.execute(
-                    "DELETE FROM search_fts WHERE entry_id = ?", (entry.id,)
-                )
+                fts_rowid = fts_rowids.get(entry.id)
+                if fts_rowid is None:
+                    # Pre-mapping databases need one compatibility scan before they self-heal.
+                    connection.execute(
+                        "DELETE FROM search_fts WHERE entry_id = ?", (entry.id,)
+                    )
+                else:
+                    connection.execute(
+                        "DELETE FROM search_fts WHERE rowid = ?", (fts_rowid,)
+                    )
                 connection.execute(
                     """
                     INSERT INTO search_entries(
@@ -131,6 +139,16 @@ class HybridSearchBackend:
                 connection.execute(
                     "INSERT INTO search_fts(entry_id, namespace, content) VALUES (?, ?, ?)",
                     (entry.id, entry.namespace, entry.content),
+                )
+                fts_rowid = connection.execute("SELECT last_insert_rowid()").fetchone()[
+                    0
+                ]
+                connection.execute(
+                    """
+                    INSERT INTO search_fts_rows(entry_id, fts_rowid) VALUES (?, ?)
+                    ON CONFLICT(entry_id) DO UPDATE SET fts_rowid=excluded.fts_rowid
+                    """,
+                    (entry.id, fts_rowid),
                 )
             connection.commit()
 
@@ -174,6 +192,7 @@ class HybridSearchBackend:
         if not entry_ids:
             return
         profiles = self._profiles_for_entry_ids(entry_ids)
+        fts_rowids = self._fts_rowids_for_entry_ids(entry_ids)
         grouped: dict[str, list[str]] = {}
         for entry_id, profile in profiles.items():
             grouped.setdefault(profile, []).append(entry_id)
@@ -185,8 +204,17 @@ class HybridSearchBackend:
                     raise
         with self._connect() as connection:
             for entry_id in entry_ids:
+                fts_rowid = fts_rowids.get(entry_id)
+                if fts_rowid is None:
+                    connection.execute(
+                        "DELETE FROM search_fts WHERE entry_id = ?", (entry_id,)
+                    )
+                else:
+                    connection.execute(
+                        "DELETE FROM search_fts WHERE rowid = ?", (fts_rowid,)
+                    )
                 connection.execute(
-                    "DELETE FROM search_fts WHERE entry_id = ?", (entry_id,)
+                    "DELETE FROM search_fts_rows WHERE entry_id = ?", (entry_id,)
                 )
                 connection.execute(
                     "DELETE FROM search_content WHERE entry_id = ?", (entry_id,)
@@ -281,6 +309,21 @@ class HybridSearchBackend:
             found.update(
                 {str(row["entry_id"]): str(row["embedding_profile_id"]) for row in rows}
             )
+        return found
+
+    def _fts_rowids_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, int]:
+        if not entry_ids:
+            return {}
+        found: dict[str, int] = {}
+        for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
+            batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch)
+            with self._connect() as connection:
+                rows = connection.execute(
+                    f"SELECT entry_id, fts_rowid FROM search_fts_rows WHERE entry_id IN ({placeholders})",
+                    tuple(batch),
+                ).fetchall()
+            found.update({str(row["entry_id"]): int(row["fts_rowid"]) for row in rows})
         return found
 
     def _load_entries(self, entry_ids: Sequence[str]) -> dict[str, _StoredEntry]:

@@ -32,6 +32,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
     tokenize = "unicode61 tokenchars '_:'"
 );
 
+CREATE TABLE IF NOT EXISTS search_fts_rows (
+    entry_id TEXT PRIMARY KEY REFERENCES search_entries(entry_id) ON DELETE CASCADE,
+    fts_rowid INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS embedding_cache (
     embedding_profile_id TEXT NOT NULL,
     content_hash TEXT NOT NULL,

@@ -10,6 +10,7 @@ from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
+from houdocs.search.models import SearchEntry
 from houdocs.search.service import DocumentSearchService
 from houdocs.search.store import SearchStore
 
@@ -131,6 +132,29 @@ def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
     assert first["indexed"] == 1
     assert second == {"entries": 1, "indexed": 0, "skipped": 1, "removed": 0}
     assert third["indexed"] == 1
+
+
+def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> None:
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=FakeDense(),
+    )
+    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})
+
+    backend.upsert([entry])
+    backend.upsert([entry])
+
+    with backend._connect() as connection:
+        mapped = connection.execute(
+            "SELECT fts_rowid FROM search_fts_rows WHERE entry_id = 'entry'"
+        ).fetchone()
+        rows = connection.execute(
+            "SELECT COUNT(*) FROM search_fts WHERE entry_id = 'entry'"
+        ).fetchone()
+    assert mapped is not None
+    assert rows[0] == 1
 
 
 def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -> None:

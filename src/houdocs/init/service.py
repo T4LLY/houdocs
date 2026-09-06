@@ -7,6 +7,13 @@ from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
 from houdocs.init.report import InitReporter, write_json_atomic
 from houdocs.init.runtime import HoudiniRuntime, RuntimeSnapshot
+from houdocs.node.index import NodeIndexer
+from houdocs.node.repository import NodeRepository
+from houdocs.node.unresolved import unresolved_path
+from houdocs.python_docs.index import PythonIndexer
+from houdocs.python_docs.repository import PythonRepository
+from houdocs.vex_docs.index import VexIndexer
+from houdocs.vex_docs.repository import VexRepository
 from houdocs.paths import VersionPaths
 
 
@@ -49,6 +56,34 @@ class InitService:
             ),
         )
 
+        warning = lambda kind, detail, document, symbol: reporter.warning(
+            kind, detail, document=document, symbol=symbol
+        )
+        error = lambda kind, detail, document, symbol: reporter.error(
+            kind, detail, document=document, symbol=symbol
+        )
+        node = NodeIndexer(
+            documents=repository,
+            repository=NodeRepository(paths.database),
+            docs_directory=paths.docs,
+            report_directory=paths.reports,
+        ).index_all(
+            snapshot.node_types,
+            houdini_version=snapshot.houdini_version,
+            on_warning=warning,
+            on_error=error,
+        )
+        python = PythonIndexer(
+            documents=repository,
+            repository=PythonRepository(paths.database),
+            docs_directory=paths.docs,
+        ).index_all(on_warning=warning, on_error=error)
+        vex = VexIndexer(
+            documents=repository,
+            repository=VexRepository(paths.database),
+            docs_directory=paths.docs,
+        ).index_all(on_warning=warning, on_error=error)
+
         report_path = paths.reports / "init-report.json"
         report = reporter.build(
             houdini_version=snapshot.houdini_version,
@@ -61,10 +96,14 @@ class InitService:
                 "parameter_errors": snapshot.parameter_error_count,
             },
             documents=documents,
+            node=node,
+            python=python,
+            vex=vex,
             artifacts={
                 "docs_database": str(paths.database),
                 "docs_cache": str(paths.docs),
                 "node_types": str(node_dump_path),
+                "node_unresolved": str(unresolved_path(paths.reports, snapshot.houdini_version)),
                 "report": str(report_path),
             },
         )

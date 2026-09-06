@@ -91,6 +91,20 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
         "parameters": 1,
         "parameter_errors": 1,
     }
+    assert result["node"]["documents"] == 0
+    assert result["python"] == {
+        "documents": 0,
+        "symbols": 0,
+        "duplicates": 0,
+        "failed": 0,
+    }
+    assert result["vex"] == {
+        "documents": 0,
+        "functions": 0,
+        "duplicates": 0,
+        "failed": 0,
+    }
+    assert Path(result["artifacts"]["node_unresolved"]).is_file()
     assert result["issue_counts"] == {"warnings": 1, "errors": 0}
     assert result["issues"][0]["kind"] == "node_parameter_introspection_error"
     assert result["issues"][0]["symbol"] == "Sop/bad"

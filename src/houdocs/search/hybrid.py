@@ -66,11 +66,36 @@ class HybridSearchBackend:
     ) -> None:
         if not entries:
             return
-        existing_profiles = self._profiles_for_entry_ids([entry.id for entry in entries])
+        existing_profiles = self._profiles_for_entry_ids(
+            [entry.id for entry in entries]
+        )
+        grouped: dict[str, list[SearchEntry]] = {}
+        for entry in entries:
+            grouped.setdefault(entry.embedding_profile, []).append(entry)
+        for profile, group in grouped.items():
+            vectors = self._ensure_vector_cache(
+                profile,
+                [self._stored_from_entry(entry) for entry in group],
+                embedding_progress=embedding_progress,
+            )
+            self.dense.upsert(profile, group, vectors)
+
+        moved: dict[str, list[str]] = {}
+        for entry in entries:
+            old_profile = existing_profiles.get(entry.id)
+            if old_profile and old_profile != entry.embedding_profile:
+                moved.setdefault(old_profile, []).append(entry.id)
+        for profile, entry_ids in moved.items():
+            self.dense.remove(profile, entry_ids)
+
         with self._connect() as connection:
             for entry in entries:
-                metadata_json = json.dumps(entry.metadata, ensure_ascii=False, sort_keys=True)
-                connection.execute("DELETE FROM search_fts WHERE entry_id = ?", (entry.id,))
+                metadata_json = json.dumps(
+                    entry.metadata, ensure_ascii=False, sort_keys=True
+                )
+                connection.execute(
+                    "DELETE FROM search_fts WHERE entry_id = ?", (entry.id,)
+                )
                 connection.execute(
                     """
                     INSERT INTO search_entries(
@@ -108,25 +133,6 @@ class HybridSearchBackend:
                     (entry.id, entry.namespace, entry.content),
                 )
             connection.commit()
-
-        moved: dict[str, list[str]] = {}
-        for entry in entries:
-            old_profile = existing_profiles.get(entry.id)
-            if old_profile and old_profile != entry.embedding_profile:
-                moved.setdefault(old_profile, []).append(entry.id)
-        for profile, entry_ids in moved.items():
-            self.dense.remove(profile, entry_ids)
-
-        grouped: dict[str, list[SearchEntry]] = {}
-        for entry in entries:
-            grouped.setdefault(entry.embedding_profile, []).append(entry)
-        for profile, group in grouped.items():
-            vectors = self._ensure_vector_cache(
-                profile,
-                [self._stored_from_entry(entry) for entry in group],
-                embedding_progress=embedding_progress,
-            )
-            self.dense.upsert(profile, group, vectors)
 
     def missing_embedding_count(self, entries: Sequence[SearchEntry]) -> int:
         grouped: dict[str, set[str]] = {}
@@ -179,9 +185,15 @@ class HybridSearchBackend:
                     raise
         with self._connect() as connection:
             for entry_id in entry_ids:
-                connection.execute("DELETE FROM search_fts WHERE entry_id = ?", (entry_id,))
-                connection.execute("DELETE FROM search_content WHERE entry_id = ?", (entry_id,))
-                connection.execute("DELETE FROM search_entries WHERE entry_id = ?", (entry_id,))
+                connection.execute(
+                    "DELETE FROM search_fts WHERE entry_id = ?", (entry_id,)
+                )
+                connection.execute(
+                    "DELETE FROM search_content WHERE entry_id = ?", (entry_id,)
+                )
+                connection.execute(
+                    "DELETE FROM search_entries WHERE entry_id = ?", (entry_id,)
+                )
             connection.commit()
 
     def search(
@@ -199,7 +211,9 @@ class HybridSearchBackend:
         profile = self._profile_for(namespaces)
         if not profile:
             return []
-        lexical = self.lexical.search(query, namespaces=namespaces, limit=candidate_limit)
+        lexical = self.lexical.search(
+            query, namespaces=namespaces, limit=candidate_limit
+        )
         query_vectors = self.embeddings.encode([query], profile)
         if len(query_vectors) != 1:
             raise HouDocsError(
@@ -216,7 +230,9 @@ class HybridSearchBackend:
         if not scores:
             return []
         dense_ranks = {entry_id: rank for rank, entry_id in enumerate(dense, start=1)}
-        lexical_ranks = {entry_id: rank for rank, entry_id in enumerate(lexical, start=1)}
+        lexical_ranks = {
+            entry_id: rank for rank, entry_id in enumerate(lexical, start=1)
+        }
         by_id = self._load_entries(list(scores))
         ranked = sorted(
             (entry_id for entry_id in scores if entry_id in by_id),

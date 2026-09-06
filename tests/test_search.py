@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
@@ -32,7 +33,9 @@ class FakeDense:
         return list(reversed(self.entries))[:top_k]
 
 
-def _section(document_id: str, ordinal: int, heading: str, text: str) -> DocumentSection:
+def _section(
+    document_id: str, ordinal: int, heading: str, text: str
+) -> DocumentSection:
     section_id = f"{document_id}#{ordinal}"
     return DocumentSection(
         section_id=section_id,
@@ -50,7 +53,9 @@ def _section(document_id: str, ordinal: int, heading: str, text: str) -> Documen
     )
 
 
-def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(tmp_path: Path) -> None:
+def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
+    tmp_path: Path,
+) -> None:
     docs = DocumentRepository(tmp_path / "docs.db")
     document = Document(
         document_id="doc",
@@ -100,7 +105,9 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(tmp_path: Path)
     }
 
 
-def test_search_reuses_unchanged_entries_and_reindexes_profile_change(tmp_path: Path) -> None:
+def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
+    tmp_path: Path,
+) -> None:
     docs = DocumentRepository(tmp_path / "docs.db")
     document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
     docs.replace_document(document, [_section("doc", 0, "Alpha", "alpha")])
@@ -111,9 +118,15 @@ def test_search_reuses_unchanged_entries_and_reindexes_profile_change(tmp_path: 
     )
     store = SearchStore(tmp_path / "search.db")
 
-    first = SearchIndexer(documents=docs, backend=backend, store=store, embedding_profile="p1").index_all()
-    second = SearchIndexer(documents=docs, backend=backend, store=store, embedding_profile="p1").index_all()
-    third = SearchIndexer(documents=docs, backend=backend, store=store, embedding_profile="p2").index_all()
+    first = SearchIndexer(
+        documents=docs, backend=backend, store=store, embedding_profile="p1"
+    ).index_all()
+    second = SearchIndexer(
+        documents=docs, backend=backend, store=store, embedding_profile="p1"
+    ).index_all()
+    third = SearchIndexer(
+        documents=docs, backend=backend, store=store, embedding_profile="p2"
+    ).index_all()
 
     assert first["indexed"] == 1
     assert second == {"entries": 1, "indexed": 0, "skipped": 1, "removed": 0}

@@ -56,6 +56,37 @@ def _invoke(action: Callable[[], None]) -> None:
         _fail(exc)
 
 
+def _init_summary(report: dict[str, object]) -> dict[str, object]:
+    documents = report.get("documents")
+    node = report.get("node")
+    python = report.get("python")
+    vex = report.get("vex")
+    search = report.get("search")
+    issue_counts = report.get("issue_counts")
+    artifacts = report.get("artifacts")
+
+    documents = documents if isinstance(documents, dict) else {}
+    node = node if isinstance(node, dict) else {}
+    python = python if isinstance(python, dict) else {}
+    vex = vex if isinstance(vex, dict) else {}
+    search = search if isinstance(search, dict) else {}
+    issue_counts = issue_counts if isinstance(issue_counts, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+
+    return {
+        "houdini_version": report.get("houdini_version"),
+        "documents": documents.get("total", 0),
+        "sections": search.get("entries", 0),
+        "node_documents": node.get("documents", 0),
+        "python_symbols": python.get("symbols", 0),
+        "vex_functions": vex.get("functions", 0),
+        "search_entries": search.get("entries", 0),
+        "warnings": issue_counts.get("warnings", 0),
+        "errors": issue_counts.get("errors", 0),
+        "report": artifacts.get("report"),
+    }
+
+
 def _offline_paths(config: HouDocsConfig) -> VersionPaths:
     version = resolve_initialized_version(config.houdini.version)
     paths = VersionPaths.for_version(version)
@@ -96,7 +127,7 @@ def init_command(
             result = InitService().run(version, config=config, progress=progress_view)
         finally:
             progress_view.finish()
-        _emit(result)
+        _emit(_init_summary(result))
 
     _invoke(action)
 

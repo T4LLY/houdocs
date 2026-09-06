@@ -23,14 +23,15 @@ An item that was read but could not be completely resolved SHALL be reported as 
 - **WHEN** a node exists but its parameter introspection fails
 - **THEN** the issue severity is `warning`
 
-### Requirement: Persist the complete report per Houdini version
+### Requirement: Persist the complete report and keep CLI output compact
 
-Initialization SHALL write the complete report to `<version-root>/reports/init-report.json` and SHALL return the same report payload to the CLI caller.
+Initialization SHALL write the complete report to `<version-root>/reports/init-report.json`. The public `houdocs init` stdout payload SHALL contain only aggregate counts, the initialized Houdini version, and the report path; it SHALL NOT inline the complete `issues` array.
 
 #### Scenario: Initialization completes with warnings
 - **WHEN** initialization completes and warnings were collected
 - **THEN** `init-report.json` contains every collected warning
-- **AND** the command result includes warning and error counts
+- **AND** stdout includes warning and error counts plus the report path
+- **AND** stdout does not include the complete `issues` array
 
 ### Requirement: Preserve the runtime node dump for maintenance tools
 

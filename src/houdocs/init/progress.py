@@ -26,6 +26,9 @@ class InitProgress:
         self._document_total = 0
         self._document_last_at: float | None = None
         self._document_durations: deque[float] = deque(maxlen=self._RECENT_DOCUMENTS)
+        self._embedding_batches: deque[tuple[int, float]] = deque(
+            maxlen=self._RECENT_DOCUMENTS
+        )
 
     def show(self, message: str) -> None:
         if not self.enabled:
@@ -64,11 +67,31 @@ class InitProgress:
         batch_count: int,
         batch_seconds: float,
     ) -> None:
-        del batch_count, batch_seconds
+        if current == 0:
+            self._embedding_batches.clear()
         if total == 0:
             self.show("Embedding search sections: cached")
             return
-        self.show(f"Embedding search sections: {current}/{total} uncached")
+        if batch_count > 0:
+            self._embedding_batches.append((batch_count, max(0.0, batch_seconds)))
+
+        percent = int(current * 100 / total)
+        message = f"Embedding search sections: {current}/{total} ({percent}%) uncached"
+        eta = self._embedding_eta_seconds(current, total)
+        if eta is not None:
+            message += f" | ETA {_format_eta(eta)}"
+        elif current < total:
+            message += " | ETA --"
+        self.show(message)
+
+    def _embedding_eta_seconds(self, current: int, total: int) -> float | None:
+        if current >= total:
+            return 0.0
+        sections = sum(count for count, _seconds in self._embedding_batches)
+        if sections <= 0:
+            return None
+        seconds = sum(seconds for _count, seconds in self._embedding_batches)
+        return (seconds / sections) * (total - current)
 
     def _render_indexing(self) -> None:
         percent = (

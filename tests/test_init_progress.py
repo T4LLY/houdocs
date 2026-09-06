@@ -71,8 +71,8 @@ def test_init_progress_reports_embedding_state_separately() -> None:
     progress.finish()
 
     output = stream.getvalue()
-    assert "Embedding search sections: 0/12 uncached" in output
-    assert "Embedding search sections: 12/12 uncached" in output
+    assert "Embedding search sections: 0/12 (0%) uncached | ETA --" in output
+    assert "Embedding search sections: 12/12 (100%) uncached | ETA 0s" in output
 
 
 def test_init_progress_reports_fully_cached_embeddings() -> None:
@@ -94,3 +94,24 @@ def test_init_progress_is_silent_for_non_tty_streams() -> None:
     progress.finish()
 
     assert stream.getvalue() == ""
+
+
+def test_embedding_eta_uses_recent_30_batches_weighted_by_section_count() -> None:
+    stream = _TtyBuffer()
+    progress = InitProgress(True, stream=stream)
+
+    progress.embedding(0, 1000, 0, 0.0)
+    current = 0
+    for _ in range(30):
+        current += 10
+        progress.embedding(current, 1000, 10, 1.0)
+
+    # This 20-section batch at 4 seconds pushes the oldest batch out.
+    # Recent window: 29 * (10 sections / 1s) + (20 sections / 4s)
+    # = 310 sections in 33 seconds. 680 remain -> ETA ~= 72.4s.
+    current += 20
+    progress.embedding(current, 1000, 20, 4.0)
+    progress.finish()
+
+    assert "Embedding search sections: 320/1000 (32%) uncached" in stream.getvalue()
+    assert "ETA 1m 12s" in stream.getvalue()

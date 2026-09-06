@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from houdocs.cli import app
+from houdocs.cli import _init_summary, app
 
 
 runner = CliRunner()
@@ -76,3 +76,33 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
         assert "--houdini-version" not in output
         assert "--top-k" not in output
         assert "--rebuild" not in output
+
+
+def test_init_summary_omits_full_issue_details() -> None:
+    summary = _init_summary(
+        {
+            "houdini_version": "22.0.429",
+            "documents": {"total": 11731},
+            "node": {"documents": 4846},
+            "python": {"symbols": 35},
+            "vex": {"functions": 932},
+            "search": {"entries": 40213},
+            "issue_counts": {"warnings": 3895, "errors": 2},
+            "issues": [{"kind": "node_parameter_unresolved"}],
+            "artifacts": {"report": "C:/houdocs/reports/init-report.json"},
+        }
+    )
+
+    assert summary == {
+        "houdini_version": "22.0.429",
+        "documents": 11731,
+        "sections": 40213,
+        "node_documents": 4846,
+        "python_symbols": 35,
+        "vex_functions": 932,
+        "search_entries": 40213,
+        "warnings": 3895,
+        "errors": 2,
+        "report": "C:/houdocs/reports/init-report.json",
+    }
+    assert "issues" not in summary

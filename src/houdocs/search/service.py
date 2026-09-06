@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from houdocs.docs.repository import DocumentRepository
+from houdocs.errors import HouDocsError
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.rrf import normalize_rrf_score
 
 
 class DocumentSearchService:
-    def __init__(self, *, repository: DocumentRepository, backend: HybridSearchBackend) -> None:
+    def __init__(
+        self, *, repository: DocumentRepository, backend: HybridSearchBackend
+    ) -> None:
         self.repository = repository
         self.backend = backend
 
@@ -14,8 +17,16 @@ class DocumentSearchService:
         hits = self.backend.search(query, namespaces=["docs"], top_k=top_k)
         output: list[dict[str, object]] = []
         for hit in hits:
-            section = self.repository.section(hit.source_id)
-            document = self.repository.document(section.document_id)
+            try:
+                section = self.repository.section(hit.source_id)
+                document = self.repository.document(section.document_id)
+            except HouDocsError as exc:
+                if exc.error.code not in {
+                    "document_section_not_found",
+                    "document_not_found",
+                }:
+                    raise
+                continue
             output.append(
                 {
                     "section_id": section.section_id,

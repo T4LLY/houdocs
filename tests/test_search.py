@@ -10,7 +10,7 @@ from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
-from houdocs.search.models import SearchEntry
+from houdocs.search.models import SearchEntry, SearchHit
 from houdocs.search.service import DocumentSearchService
 from houdocs.search.store import SearchStore
 
@@ -155,6 +155,30 @@ def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> No
         ).fetchone()
     assert mapped is not None
     assert rows[0] == 1
+
+
+def test_search_skips_stale_hits_without_aborting_current_results(
+    tmp_path: Path,
+) -> None:
+    class StaleBackend:
+        def search(self, query, *, namespaces, top_k):
+            del query, namespaces, top_k
+            return [
+                SearchHit("stale", "docs", "missing", 1.0, {}),
+                SearchHit("current", "docs", "doc#0", 0.5, {}),
+            ]
+
+    docs = DocumentRepository(tmp_path / "docs.db")
+    docs.replace_document(
+        Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
+        [_section("doc", 0, "Alpha", "alpha")],
+    )
+
+    result = DocumentSearchService(repository=docs, backend=StaleBackend()).search(
+        "alpha"
+    )
+
+    assert [hit["section_id"] for hit in result["hits"]] == ["doc#0"]
 
 
 def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -> None:

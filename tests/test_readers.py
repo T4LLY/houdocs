@@ -193,3 +193,8 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
 
     assert resolved is not None
     assert resolved[0] == "higher"
+
+    bare = repository.resolve("foo")
+
+    assert bare is not None
+    assert bare[0] == "higher"

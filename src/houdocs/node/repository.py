@@ -86,11 +86,13 @@ class NodeRepository:
                 """
                 SELECT document_id, metadata_json
                 FROM node_documents
-                WHERE lower(node_type) = lower(?) OR lower(houdini_name) = lower(?)
+                WHERE lower(node_type) = lower(?)
+                   OR lower(houdini_name) = lower(?)
+                   OR lower(json_extract(metadata_json, '$.node_type.internal_name')) = lower(?)
                 ORDER BY CAST(json_extract(metadata_json, '$.node_type.priority') AS INTEGER) DESC, node_type
                 LIMIT 1
                 """,
-                (key, key),
+                (key, key, key),
             ).fetchone()
         if row is None:
             return None

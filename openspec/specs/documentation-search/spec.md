@@ -57,3 +57,12 @@ Search indexing SHALL split large entry-ID and content-hash lookup sets into bou
 - **WHEN** `houdocs init` needs to inspect more search entry IDs than SQLite accepts in one statement
 - **THEN** HouDocs queries those IDs in bounded batches
 - **AND** indexing continues without a `too many SQL variables` failure
+
+### Requirement: Embedding work is bounded by document
+
+Search indexing SHALL submit changed documentation sections to the embedding backend one document at a time rather than as one version-wide batch. This batching SHALL NOT change section identity, cache reuse, progress totals, or search results.
+
+#### Scenario: Multiple documents require embeddings
+- **WHEN** changed sections from multiple documentation pages require embeddings
+- **THEN** each backend upsert contains sections from only one document
+- **AND** the progress total still represents all uncached embeddings for the init

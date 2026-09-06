@@ -153,6 +153,51 @@ def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -
     assert second_progress == [(0, 0, 0, 0.0)]
 
 
+def test_search_index_embeds_changed_sections_per_document(tmp_path: Path) -> None:
+    class RecordingEmbeddings:
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+
+        def encode(self, texts, profile):
+            del profile
+            self.batch_sizes.append(len(texts))
+            return np.asarray(
+                [[float(len(text)), 1.0] for text in texts],
+                dtype=np.float32,
+            )
+
+    docs = DocumentRepository(tmp_path / "docs.db")
+    docs.replace_document(
+        Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
+        [
+            _section("doc-a", 0, "A1", "alpha one"),
+            _section("doc-a", 1, "A2", "alpha two"),
+        ],
+    )
+    docs.replace_document(
+        Document("doc-b", "B", "b.txt", "concept", "22.0.429", "hb"),
+        [
+            _section("doc-b", 0, "B1", "beta one"),
+            _section("doc-b", 1, "B2", "beta two"),
+        ],
+    )
+    embeddings = RecordingEmbeddings()
+    backend = HybridSearchBackend(
+        database=tmp_path / "search.db",
+        embeddings=embeddings,
+        dense_index=FakeDense(),
+    )
+
+    SearchIndexer(
+        documents=docs,
+        backend=backend,
+        store=SearchStore(tmp_path / "search.db"),
+        embedding_profile="p1",
+    ).index_all()
+
+    assert embeddings.batch_sizes == [2, 2]
+
+
 def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
     tmp_path: Path,
     monkeypatch,

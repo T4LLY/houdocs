@@ -54,6 +54,9 @@ class SearchIndexer:
             )
             for section in changed
         ]
+        entries_by_document: dict[str, list[SearchEntry]] = {}
+        for section, entry in zip(changed, entries, strict=True):
+            entries_by_document.setdefault(section.document_id, []).append(entry)
         if stale:
             self.backend.remove(stale)
         if embedding_progress is not None:
@@ -71,10 +74,14 @@ class SearchIndexer:
                     batch_seconds,
                 )
 
-            if entries:
-                self.backend.upsert(entries, embedding_progress=report_embedding)
-        elif entries:
-            self.backend.upsert(entries)
+            for document_entries in entries_by_document.values():
+                self.backend.upsert(
+                    document_entries,
+                    embedding_progress=report_embedding,
+                )
+        else:
+            for document_entries in entries_by_document.values():
+                self.backend.upsert(document_entries)
         self.store.set_version(SEARCH_SCHEMA_VERSION)
         return {
             "entries": len(current),

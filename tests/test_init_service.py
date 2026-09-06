@@ -72,13 +72,20 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     dump_path = version_root / "reports" / "houdini-node-types-22.0.429.json"
     assert report_path.is_file()
     assert dump_path.is_file()
-    assert not (version_root / "docs.db").exists()
+    assert (version_root / "docs.db").is_file()
     assert not (version_root / "search.db").exists()
 
     persisted_report = json.loads(report_path.read_text(encoding="utf-8"))
     persisted_dump = json.loads(dump_path.read_text(encoding="utf-8"))
     assert result == persisted_report
     assert persisted_dump == payload
+    assert result["documents"] == {
+        "total": 0,
+        "indexed": 0,
+        "skipped": 0,
+        "removed": 0,
+        "failed": 0,
+    }
     assert result["runtime"] == {
         "node_types": 2,
         "parameters": 1,

@@ -91,7 +91,9 @@ def init_command(
 
 
 @app.command("search")
-def search_command(query: str) -> None:
+def search_command(
+    query: Annotated[str, typer.Argument(metavar="QUERY")],
+) -> None:
     def action() -> None:
         config = load_config()
         paths = _offline_paths(config)
@@ -107,8 +109,8 @@ def search_command(query: str) -> None:
 
 @app.command("read")
 def read_command(
-    page: str,
-    section: Annotated[str | None, typer.Argument()] = None,
+    page: Annotated[str, typer.Argument(metavar="PAGE")],
+    section: Annotated[str | None, typer.Argument(metavar="SECTION")] = None,
 ) -> None:
     def action() -> None:
         config = load_config()
@@ -119,7 +121,9 @@ def read_command(
 
 
 @app.command("node")
-def node_command(node_type: str) -> None:
+def node_command(
+    node_type: Annotated[str, typer.Argument(metavar="NODE_TYPE")],
+) -> None:
     def action() -> None:
         config = load_config()
         paths = _offline_paths(config)
@@ -135,7 +139,9 @@ def node_command(node_type: str) -> None:
 
 
 @app.command("python")
-def python_command(symbol: str) -> None:
+def python_command(
+    symbol: Annotated[str, typer.Argument(metavar="SYMBOL")],
+) -> None:
     def action() -> None:
         config = load_config()
         paths = _offline_paths(config)
@@ -151,7 +157,9 @@ def python_command(symbol: str) -> None:
 
 
 @app.command("vex")
-def vex_command(function: str) -> None:
+def vex_command(
+    function: Annotated[str, typer.Argument(metavar="FUNCTION")],
+) -> None:
     def action() -> None:
         config = load_config()
         paths = _offline_paths(config)

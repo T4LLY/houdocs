@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "houdocs"
+version = "0.1.0"
+description = "Offline-first CLI for indexed Houdini documentation."
+requires-python = ">=3.11"
+dependencies = [
+  "platformdirs>=4,<5",
+  "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+houdocs = "houdocs.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/houdocs"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]

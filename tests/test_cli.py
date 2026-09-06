@@ -1,13 +1,37 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from houdocs.cli import app
 
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def isolate_cli_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import houdocs.config as config_module
+    import houdocs.paths as paths_module
+
+    monkeypatch.setattr(
+        config_module,
+        "default_config_path",
+        lambda: tmp_path / "config.toml",
+    )
+    monkeypatch.setattr(
+        config_module,
+        "local_config_path",
+        lambda cwd=None: tmp_path / ".houdocs.toml",
+    )
+    monkeypatch.setattr(
+        paths_module,
+        "default_data_root",
+        lambda: tmp_path / "data",
+    )
 
 
 def test_cli_exposes_only_the_planned_top_level_commands() -> None:

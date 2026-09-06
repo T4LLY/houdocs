@@ -28,7 +28,7 @@ def test_init_exposes_version_but_not_connection_target_options() -> None:
     assert "--executable" not in result.stdout
 
 
-def test_phase_one_commands_fail_with_machine_readable_error() -> None:
+def test_unimplemented_reader_commands_fail_with_machine_readable_error() -> None:
     result = runner.invoke(app, ["search", "packed primitive"])
 
     assert result.exit_code == 1

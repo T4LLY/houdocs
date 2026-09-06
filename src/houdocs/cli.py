@@ -7,6 +7,7 @@ import typer
 
 from houdocs.config import load_config, resolve_requested_version
 from houdocs.errors import HouDocsError
+from houdocs.init.service import InitService
 
 
 app = typer.Typer(
@@ -45,7 +46,7 @@ def _invoke(action: Callable[[], None]) -> None:
 def _not_implemented(command: str, *, detail: str | None = None) -> None:
     raise HouDocsError(
         "feature_not_implemented",
-        f"houdocs {command} is not implemented in phase 1.",
+        f"houdocs {command} is not implemented yet.",
         detail=detail,
     )
 
@@ -60,8 +61,7 @@ def init_command(
     def action() -> None:
         config = load_config()
         version = resolve_requested_version(houdini_version, config=config)
-        detail = f"requested_version={version}" if version else "requested_version=auto"
-        _not_implemented("init", detail=detail)
+        _emit(InitService().run(version))
 
     _invoke(action)
 

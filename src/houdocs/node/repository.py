@@ -68,8 +68,7 @@ class NodeRepository:
                                 sort_keys=True,
                             ),
                         )
-                        for node_type, parameters, parameter_docs, parameter_links, ports, related
-                        in records
+                        for node_type, parameters, parameter_docs, parameter_links, ports, related in records
                     ],
                 )
                 connection.commit()
@@ -80,7 +79,6 @@ class NodeRepository:
                 detail=str(exc),
             ) from exc
 
-
     def resolve(self, node_type: str) -> tuple[str, dict[str, object]] | None:
         key = node_type.strip()
         with connect(self.database) as connection:
@@ -89,7 +87,7 @@ class NodeRepository:
                 SELECT document_id, metadata_json
                 FROM node_documents
                 WHERE lower(node_type) = lower(?) OR lower(houdini_name) = lower(?)
-                ORDER BY node_type
+                ORDER BY CAST(json_extract(metadata_json, '$.node_type.priority') AS INTEGER) DESC, node_type
                 LIMIT 1
                 """,
                 (key, key),

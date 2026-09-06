@@ -4,9 +4,11 @@ from pathlib import Path
 
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
+from houdocs.docs.models import Document
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.node.index import NodeIndexer
+from houdocs.node.models import NodeTypeDocument
 from houdocs.node.read import NodeReader
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
@@ -46,7 +48,9 @@ def test_read_returns_page_or_named_section_only(tmp_path: Path) -> None:
     assert "More." in section["text"]
 
 
-def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(tmp_path: Path) -> None:
+def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "help"
     (source / "hom" / "hou").mkdir(parents=True)
     (source / "vex" / "functions").mkdir(parents=True)
@@ -118,4 +122,74 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(tmp_path:
     assert vex["group"] == "geometry"
     assert "Distance." in vex["text"]
     assert node["parameters"][0]["ids"] == ["strength"]
-    assert node["parameters"][0]["runtime_parameters"][0]["resolution_source"] == "bookish-id"
+    assert (
+        node["parameters"][0]["runtime_parameters"][0]["resolution_source"]
+        == "bookish-id"
+    )
+
+
+def test_node_repository_resolves_duplicate_canonical_names_by_priority(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "docs.db"
+    documents = DocumentRepository(database)
+    documents.replace_document(
+        Document("lower", "Lower", "nodes/sop/foo.txt", "node", "22.0.429", "lower"),
+        [],
+    )
+    documents.replace_document(
+        Document(
+            "higher", "Higher", "nodes/sop/foo-2.txt", "node", "22.0.429", "higher"
+        ),
+        [],
+    )
+    repository = NodeRepository(database)
+    repository.replace_all(
+        [
+            (
+                NodeTypeDocument(
+                    "a",
+                    "lower",
+                    "sop",
+                    None,
+                    "foo",
+                    None,
+                    "Sop",
+                    "Sop/foo",
+                    1,
+                    "houdini",
+                    None,
+                ),
+                (),
+                (),
+                (),
+                (),
+                (),
+            ),
+            (
+                NodeTypeDocument(
+                    "z",
+                    "higher",
+                    "sop",
+                    None,
+                    "foo",
+                    None,
+                    "Sop",
+                    "Sop/foo",
+                    1001,
+                    "houdini",
+                    None,
+                ),
+                (),
+                (),
+                (),
+                (),
+                (),
+            ),
+        ]
+    )
+
+    resolved = repository.resolve("Sop/foo")
+
+    assert resolved is not None
+    assert resolved[0] == "higher"

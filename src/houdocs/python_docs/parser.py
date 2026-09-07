@@ -3,20 +3,18 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
+from houdocs.docs.header import parse_page_properties
 from houdocs.docs.models import Document
 from houdocs.python_docs.models import PythonDocumentRecord
+from houdocs.python_docs.signature import parse_python_signature
 
-_PROPERTY_RE = re.compile(r"^#(?P<name>[A-Za-z0-9_-]+):\s*(?P<value>.*)$")
 _HEADING_RE = re.compile(r"^=\s*(?P<title>.*?)\s*=\s*$")
-_PYTHON_SIGNATURE_RE = re.compile(
-    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:[-=]*>|→)?.*$"
-)
 
 
 def parse_python_document(
     document: Document, source: str
 ) -> list[PythonDocumentRecord]:
-    properties = _page_properties(source)
+    properties = parse_page_properties(source)
     reference_type = properties.get("type", "").casefold()
     if reference_type not in {"homclass", "homfunction", "hommodule"}:
         return []
@@ -65,17 +63,6 @@ def parse_python_document(
     return records
 
 
-def _page_properties(source: str) -> dict[str, str]:
-    properties: dict[str, str] = {}
-    for line in source.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if line.lstrip().startswith("=") or line.startswith("@"):
-            break
-        match = _PROPERTY_RE.match(line.rstrip())
-        if match:
-            properties[match.group("name")] = match.group("value").strip()
-    return properties
-
-
 def _page_symbol(document: Document, source: str) -> str | None:
     for line in source.splitlines():
         match = _HEADING_RE.match(line.rstrip())
@@ -108,7 +95,7 @@ def _group_signatures(source: str) -> dict[str, list[str]]:
             continue
         if in_code:
             continue
-        parsed = _python_signature(line)
+        parsed = parse_python_signature(line)
         if parsed is None:
             continue
         name, signature = parsed
@@ -117,17 +104,3 @@ def _group_signatures(source: str) -> dict[str, list[str]]:
         seen[name].add(signature)
         grouped.setdefault(name, []).append(signature)
     return grouped
-
-
-def _python_signature(line: str) -> tuple[str, str] | None:
-    if len(line) - len(line.lstrip(" ")) > 4:
-        return None
-    value = line.strip()
-    if not value or value.startswith((">>>", "...")):
-        return None
-    value = re.sub(r"^:[A-Za-z0-9_-]+:\s*", "", value)
-    value = value.strip("`*_ ")
-    match = _PYTHON_SIGNATURE_RE.match(value)
-    if match is None:
-        return None
-    return match.group("name"), value.rstrip(":").strip()

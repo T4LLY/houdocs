@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-import re
-
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
 from houdocs.python_docs.repository import PythonRepository
-
-
-_PYTHON_SIGNATURE_RE = re.compile(
-    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:[-=]*>|→)?.*$"
-)
+from houdocs.python_docs.signature import parse_python_signature
 
 
 class PythonDocumentReader:
@@ -66,7 +60,7 @@ def _extract_python_member(text: str, member: str) -> tuple[str, str] | None:
     start: int | None = None
     signature: str | None = None
     for index, line in enumerate(lines):
-        parsed = _python_signature(line)
+        parsed = parse_python_signature(line)
         if parsed is not None and parsed[0] == member:
             start = index
             signature = parsed[1]
@@ -76,25 +70,9 @@ def _extract_python_member(text: str, member: str) -> tuple[str, str] | None:
 
     end = len(lines)
     for index in range(start + 1, len(lines)):
-        parsed = _python_signature(lines[index])
+        parsed = parse_python_signature(lines[index])
         if parsed is not None and parsed[0] != member:
             end = index
             break
     block = "\n".join(lines[start:end]).strip()
     return signature, block
-
-
-def _python_signature(line: str) -> tuple[str, str] | None:
-    if len(line) - len(line.lstrip(" ")) > 4:
-        return None
-    value = line.strip()
-    if not value or value.startswith((">>>", "...")):
-        return None
-    value = re.sub(r"^:[A-Za-z0-9_-]+:\s*", "", value)
-    value = value.strip("`*_ ")
-    match = _PYTHON_SIGNATURE_RE.match(value)
-    if match is None:
-        return None
-    name = match.group("name")
-    signature = value.rstrip(":").strip()
-    return name, signature

@@ -5,12 +5,14 @@ import sqlite3
 from pathlib import Path
 
 from houdocs.docs.bookish import BookishDocumentParser
+from houdocs.docs.header import parse_page_properties
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
 from houdocs.node.index import NodeIndexer
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
 from houdocs.python_docs.parser import _group_signatures
+from houdocs.python_docs.signature import parse_python_signature
 from houdocs.python_docs.repository import PythonRepository
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.repository import VexRepository
@@ -194,6 +196,32 @@ Legacy Label:
     assert persisted["unresolved"]["parameters"] == []
 
 
+def test_specialized_page_properties_accept_real_and_legacy_header_order() -> None:
+    assert parse_page_properties("= xyzdist =\n\n#type: vex\n#context: all\n\nBody.") == {
+        "type": "vex",
+        "context": "all",
+    }
+    assert parse_page_properties("#type: vex\n#context: all\n= xyzdist =\n\nBody.") == {
+        "type": "vex",
+        "context": "all",
+    }
+    assert parse_page_properties(
+        "= accessframe =\n\nIntro.\n\n#type: vex\n#context: cop2\n\n@related\n#type: ignored"
+    ) == {
+        "type": "vex",
+        "context": "cop2",
+    }
+
+
+def test_python_signature_accepts_real_hom_method_syntax() -> None:
+    assert parse_python_signature(
+        "::`setInput(self, input_index, item_to_become_input, output_index=0)`:"
+    ) == (
+        "setInput",
+        "setInput(self, input_index, item_to_become_input, output_index=0)",
+    )
+
+
 def test_python_signature_grouping_ignores_bookish_code_blocks() -> None:
     grouped = _group_signatures("method(value)\n{{{\nprint('example')\n}}}")
 
@@ -207,21 +235,21 @@ def test_python_index_builds_direct_symbol_rows_without_body_duplication(
     hom = source / "hom" / "hou"
     hom.mkdir(parents=True)
     (hom / "Node.txt").write_text(
-        """#type: homclass
-= hou.Node =
+        """= hou.Node =
+#type: homclass
 
 == Methods ==
-setInput(input_index, item_to_become_input, output_index=0):
+::`setInput(self, input_index, item_to_become_input, output_index=0)`:
     Connect another node.
-setInput(input_index, item_to_become_input):
+::`setInput(self, input_index, item_to_become_input)`:
     Alternate overload.
-setNamedInput(input_name, item_to_become_input, output_name_or_index):
+::`setNamedInput(self, input_name, item_to_become_input, output_name_or_index)`:
     Connect by name.
 """,
         encoding="utf-8",
     )
     (hom / "node_.txt").write_text(
-        "#type: homfunction\n= hou.node =\n\nnode(path):\n    Return a node.\n",
+        "= hou.node =\n\n#type: homfunction\n\n:usage: `node(path)`\n    Return a node.\n",
         encoding="utf-8",
     )
     state = tmp_path / "state"
@@ -259,12 +287,13 @@ def test_vex_index_preserves_overloads_context_group_tags_and_status(
     vex = source / "vex" / "functions"
     vex.mkdir(parents=True)
     (vex / "xyzdist.txt").write_text(
-        """#type: vex
+        """= xyzdist =
+
+#type: vex
 #context: sop surface
 #group: geometry
 #tags: distance, geometry
 #status: stable
-= xyzdist =
 
 float xyzdist(int geometry, vector origin):
     Find closest point.

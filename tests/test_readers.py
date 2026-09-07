@@ -56,11 +56,11 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     (source / "vex" / "functions").mkdir(parents=True)
     (source / "nodes" / "sop").mkdir(parents=True)
     (source / "hom" / "hou" / "Node.txt").write_text(
-        "#type: homclass\n= hou.Node =\n\nsetInput(input_index, node):\n    Connect input.\n",
+        "= hou.Node =\n#type: homclass\n\n::`setInput(self, input_index, node)`:\n    Connect input.\n",
         encoding="utf-8",
     )
     (source / "vex" / "functions" / "xyzdist.txt").write_text(
-        "#type: vex\n#context: sop\n#group: geometry\n= xyzdist =\n\nfloat xyzdist(int geo, vector p):\n    Distance.\n",
+        "= xyzdist =\n\n#type: vex\n#context: sop\n#group: geometry\n\nfloat xyzdist(int geo, vector p):\n    Distance.\n",
         encoding="utf-8",
     )
     (source / "nodes" / "sop" / "example.txt").write_text(
@@ -116,7 +116,7 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     ).read("Sop/example")
 
     assert py["kind"] == "method"
-    assert py["signatures"] == ["setInput(input_index, node)"]
+    assert py["signatures"] == ["setInput(self, input_index, node)"]
     assert "Connect input." in py["text"]
     assert vex["contexts"] == ["sop"]
     assert vex["group"] == "geometry"

@@ -3,15 +3,15 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
+from houdocs.docs.header import parse_page_properties
 from houdocs.docs.models import Document
 from houdocs.vex_docs.models import VexDocumentRecord
 
-_PROPERTY_RE = re.compile(r"^#(?P<name>[A-Za-z0-9_-]+):\s*(?P<value>.*)$")
 _HEADING_RE = re.compile(r"^=\s*(?P<title>.*?)\s*=\s*$")
 
 
 def parse_vex_document(document: Document, source: str) -> VexDocumentRecord | None:
-    properties = _page_properties(source)
+    properties = parse_page_properties(source)
     if properties.get("type", "").casefold() != "vex":
         return None
     function = _function_name(document, source)
@@ -27,17 +27,6 @@ def parse_vex_document(document: Document, source: str) -> VexDocumentRecord | N
         status=properties.get("status") or None,
         metadata={"reference_type": "vex"},
     )
-
-
-def _page_properties(source: str) -> dict[str, str]:
-    properties: dict[str, str] = {}
-    for line in source.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if line.lstrip().startswith("=") or line.startswith("@"):
-            break
-        match = _PROPERTY_RE.match(line.rstrip())
-        if match:
-            properties[match.group("name")] = match.group("value").strip()
-    return properties
 
 
 def _function_name(document: Document, source: str) -> str | None:

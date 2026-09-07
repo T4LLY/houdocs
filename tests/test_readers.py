@@ -163,6 +163,28 @@ def test_read_pick_rejects_candidate_number_outside_available_range(
     assert caught.value.error.code == "document_pick_out_of_range"
 
 
+def test_read_pick_rejects_zero(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text("= Page =\n\nBody.\n", encoding="utf-8")
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.read("Page", pick=0)
+    assert caught.value.error.code == "document_pick_out_of_range"
+
+
+def test_read_pick_rejects_negative(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text("= Page =\n\nBody.\n", encoding="utf-8")
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.read("Page", pick=-1)
+    assert caught.value.error.code == "document_pick_out_of_range"
+
+
 def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     tmp_path: Path,
 ) -> None:
@@ -290,8 +312,6 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     assert reader.read("Sop/example/parameters/mode") == {"description": ""}
     assert reader.read("Sop/example/inputs/0") == {"description": ""}
     assert reader.read("Sop/example/outputs/0") == {"description": ""}
-
-
 
 
 def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -> None:
@@ -461,9 +481,7 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
         "related": ["sop/copy", "/model/copying"],
     }
 
-    reader = NodeReader(
-        documents=documents, repository=repository, token_counter=len
-    )
+    reader = NodeReader(documents=documents, repository=repository, token_counter=len)
     assert reader.read("sop/example/inputs/0") == {"description": "Source geometry."}
     assert reader.read("sop/example/inputs/1") == {"description": "Target geometry."}
     assert reader.read("sop/example/outputs/0") == {"description": "Result geometry."}

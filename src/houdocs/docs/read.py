@@ -61,7 +61,7 @@ class DocumentReader:
         if not matches:
             raise HouDocsError("document_not_found", f"Document not found: {page}")
         if pick is not None:
-            if pick > len(matches):
+            if pick < 1 or pick > len(matches):
                 raise HouDocsError(
                     "document_pick_out_of_range",
                     f"Document pick is out of range for {page}: {pick} (1-{len(matches)})",

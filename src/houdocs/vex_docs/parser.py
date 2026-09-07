@@ -61,10 +61,20 @@ def _vex_signatures(source: str, function: str) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     pattern = re.compile(rf"\b{re.escape(function)}\s*\(")
+    in_code = False
     for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("{{{"):
+            in_code = True
+            continue
+        if stripped.startswith("}}}"):
+            in_code = False
+            continue
+        if in_code:
+            continue
         if len(line) - len(line.lstrip(" ")) > 4:
             continue
-        value = line.strip().strip("`*_ ").rstrip(":").strip()
+        value = stripped.strip("`*_ ").rstrip(":").strip()
         if not pattern.search(value):
             continue
         if len(value) > 300 or value.endswith((".", ":")):

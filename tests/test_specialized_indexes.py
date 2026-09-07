@@ -270,6 +270,9 @@ float xyzdist(int geometry, vector origin):
     Find closest point.
 float xyzdist(int geometry, vector origin, int &prim, vector &uv):
     Return primitive and uv.
+{{{
+xyzdist(0, P);
+}}}
 """,
         encoding="utf-8",
     )
@@ -291,7 +294,10 @@ float xyzdist(int geometry, vector origin, int &prim, vector &uv):
         columns = {
             item[1] for item in connection.execute("PRAGMA table_info(vex_documents)")
         }
-    assert len(json.loads(row["signatures_json"])) == 2
+    assert json.loads(row["signatures_json"]) == [
+        "float xyzdist(int geometry, vector origin)",
+        "float xyzdist(int geometry, vector origin, int &prim, vector &uv)",
+    ]
     assert json.loads(row["contexts_json"]) == ["sop", "surface"]
     assert row["group_name"] == "geometry"
     assert json.loads(row["tags_json"]) == ["distance", "geometry"]

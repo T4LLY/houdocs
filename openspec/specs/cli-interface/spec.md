@@ -71,3 +71,23 @@ The public init command MAY accept `--houdini-version` but SHALL NOT expose `--h
 - **WHEN** the caller requests `houdocs init --help`
 - **THEN** `--houdini-version` is available
 - **AND** `--host`, `--port`, and `--executable` are absent
+
+### Requirement: Protect existing initialization state
+
+When the selected Houdini version already has a `docs.db`, `houdocs init` SHALL require an interactive `y/N` confirmation before rebuilding that database. The default answer SHALL be `N`.
+
+#### Scenario: Existing database is not confirmed
+- **WHEN** the caller runs `houdocs init` for an already initialized version
+- **AND** the caller does not answer `y`
+- **THEN** HouDocs stops before rebuilding the existing database
+
+### Requirement: Import saved assist overrides without full initialization
+
+The public init command SHALL expose `--import-assist`. This mode SHALL apply saved Node parameter overrides to the existing documentation database without running the normal full initialization workflow. Successful output SHALL be one concise text line reporting the number of overrides actually resolved.
+
+#### Scenario: Import saved assist mappings
+- **WHEN** the caller runs `houdocs init --import-assist` for an initialized version
+- **THEN** HouDocs reuses the saved Node runtime dump and documentation cache
+- **AND** updates Node metadata in the existing `docs.db`
+- **AND** does not rebuild the general documentation or search indexes
+- **AND** prints `Imported N assist overrides.`

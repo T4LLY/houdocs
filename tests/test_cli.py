@@ -52,6 +52,8 @@ def test_init_exposes_version_but_not_connection_target_options() -> None:
     assert result.exit_code == 0
     assert "--houdini-version" in result.stdout
     assert "--progress" in result.stdout
+    assert "--import-assist" in result.stdout
+    assert "--yes" not in result.stdout
     assert "--host" not in result.stdout
     assert "--port" not in result.stdout
     assert "--executable" not in result.stdout
@@ -229,3 +231,164 @@ def test_init_summary_omits_full_issue_details() -> None:
         "errors": 2,
     }
     assert "issues" not in summary
+
+
+def test_init_existing_database_requires_explicit_y_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from houdocs.init.service import InitService
+
+    continued = {"value": False}
+
+    def fake_run(
+        self,
+        requested_version,
+        *,
+        config,
+        progress,
+        confirm_rebuild,
+    ):
+        del self, requested_version, config, progress
+        paths = VersionPaths.for_version("22.0.429")
+        paths.ensure()
+        paths.database.write_bytes(b"existing")
+        assert confirm_rebuild is not None
+        confirm_rebuild(paths)
+        continued["value"] = True
+        return {
+            "houdini_version": "22.0.429",
+            "documents": {"total": 0},
+            "node": {"documents": 0},
+            "python": {"symbols": 0},
+            "vex": {"functions": 0},
+            "search": {"entries": 0},
+            "issue_counts": {"warnings": 0, "errors": 0},
+        }
+
+    monkeypatch.setattr(InitService, "run", fake_run)
+
+    rejected = runner.invoke(
+        app,
+        ["init", "--houdini-version", "22.0.429"],
+        input="n\n",
+    )
+    assert rejected.exit_code == 0
+    assert continued["value"] is False
+    assert "houdini_version" not in rejected.stdout
+    assert "Continue? [y/N]" in rejected.stderr
+
+    accepted = runner.invoke(
+        app,
+        ["init", "--houdini-version", "22.0.429"],
+        input="y\n",
+    )
+    assert accepted.exit_code == 0
+    assert continued["value"] is True
+    payload = json.loads(accepted.stdout.splitlines()[-1])
+    assert payload["houdini_version"] == "22.0.429"
+
+
+def test_init_import_assist_updates_existing_node_metadata_without_json(
+    tmp_path: Path,
+) -> None:
+    from houdocs.docs.bookish import BookishDocumentParser
+    from houdocs.docs.index import DocumentIndexer
+    from houdocs.node.index import NodeIndexer
+    from houdocs.node.read import NodeReader
+    from houdocs.node.repository import NodeRepository
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    source = tmp_path / "help"
+    (source / "nodes" / "sop").mkdir(parents=True)
+    (source / "nodes" / "sop" / "example.txt").write_text(
+        "#type: node\n#context: sop\n#internal: example\n= Example =\n\n"
+        "@parameters\nLegacy Label:\n    Documentation.\n",
+        encoding="utf-8",
+    )
+
+    documents = DocumentRepository(paths.database)
+    DocumentIndexer(
+        repository=documents,
+        parser=BookishDocumentParser(),
+        cache_directory=paths.docs,
+        token_counter=len,
+    ).index_all(source, houdini_version="22.0.429")
+
+    runtime_rows = (
+        {
+            "category": "Sop",
+            "name": "example",
+            "canonical_name": "Sop/example",
+            "parameters": [
+                {
+                    "parameter_ordinal": 0,
+                    "id": "current_name",
+                    "label": "Current Label",
+                    "folder_path": [],
+                    "type": "String",
+                    "is_multiparm": False,
+                }
+            ],
+        },
+    )
+    NodeIndexer(
+        documents=documents,
+        repository=NodeRepository(paths.database),
+        docs_directory=paths.docs,
+        report_directory=paths.reports,
+    ).index_all(runtime_rows, houdini_version="22.0.429")
+
+    unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
+    unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))
+    unresolved["overrides"]["parameters"] = [
+        {
+            "node": "Sop/example",
+            "document": "nodes/sop/example.txt",
+            "doc_ordinal": 0,
+            "parm_ids": ["current_name"],
+        }
+    ]
+    unresolved_path.write_text(
+        json.dumps(unresolved, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (paths.reports / "houdini-node-types-22.0.429.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "houdini_version": "22.0.429",
+                "node_types": list(runtime_rows),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert NodeReader(
+        documents=documents,
+        repository=NodeRepository(paths.database),
+    ).read("Sop/example") == {}
+    paths.search_database.write_bytes(b"search-index-sentinel")
+
+    result = runner.invoke(
+        app,
+        ["init", "--houdini-version", "22.0.429", "--import-assist"],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "Imported 1 assist overrides.\n"
+    assert paths.search_database.read_bytes() == b"search-index-sentinel"
+    assert NodeReader(
+        documents=DocumentRepository(paths.database),
+        repository=NodeRepository(paths.database),
+    ).read("Sop/example") == {
+        "parameters": [
+            {
+                "id": "current_name",
+                "label": "Legacy Label",
+                "description": "Documentation.",
+                "type": "String",
+            }
+        ]
+    }

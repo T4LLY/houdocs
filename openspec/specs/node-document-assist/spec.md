@@ -29,7 +29,7 @@ AI-assisted Node parameter resolution SHALL live under `tools/` and SHALL NOT ad
 
 ### Requirement: Assist resolution is runtime-grounded
 
-`resolve` SHALL accept only parameter IDs present in the selected NodeType's runtime dump. A successful resolution SHALL be persisted under `overrides.parameters` in the unresolved JSON and SHALL be consumed by a later `houdocs init` through the specialized-index override path.
+`resolve` SHALL accept only parameter IDs present in the selected NodeType's runtime dump. A successful resolution SHALL be persisted under `overrides.parameters` in the unresolved JSON and SHALL be consumed by the specialized-index override path during either a later full `houdocs init` or `houdocs init --import-assist`.
 
 #### Scenario: AI proposes an existing runtime ID
 
@@ -75,3 +75,13 @@ The shipped assist prompt SHALL use `node_document_assist.py` for `next`, `resol
 - WHEN the AI cannot resolve a parameter from the `next` payload alone
 - THEN it may inspect the corresponding Node with `houdocs node <node>`
 - AND if the mapping is still not unique it shall skip rather than guess
+
+### Requirement: Resolved assist overrides can be imported into the existing database
+
+A successful assist `resolve` SHALL remain persisted under `overrides.parameters` in `node-document-unresolved-<version>.json`. `houdocs init --import-assist` SHALL consume those saved overrides using the existing documentation database, cached documentation, and saved runtime NodeType dump, without requiring a fresh Houdini runtime probe.
+
+#### Scenario: Apply completed assist work
+- GIVEN an initialized version with saved parameter overrides
+- WHEN `houdocs init --import-assist` runs
+- THEN manually resolved parameter mappings are applied to the existing Node metadata
+- AND the command reports the number actually resolved

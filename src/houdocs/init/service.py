@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from pathlib import Path
 
 from houdocs.config import HouDocsConfig
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
+from houdocs.errors import HouDocsError
 from houdocs.init.progress import InitProgress
 from houdocs.init.report import InitReporter, write_json_atomic
 from houdocs.init.runtime import HoudiniRuntime, RuntimeSnapshot
@@ -40,6 +43,7 @@ class InitService:
         *,
         config: HouDocsConfig,
         progress: InitProgress | None = None,
+        confirm_rebuild: Callable[[VersionPaths], None] | None = None,
     ) -> dict[str, object]:
         progress_view = progress or InitProgress(False)
         with progress_view.phase("inspect Houdini"):
@@ -54,6 +58,8 @@ class InitService:
             paths = VersionPaths.for_version(
                 snapshot.houdini_version, data_root=self.data_root
             )
+            if paths.database.is_file() and confirm_rebuild is not None:
+                confirm_rebuild(paths)
             paths.ensure()
 
         reporter = InitReporter()
@@ -160,6 +166,51 @@ class InitService:
         )
         write_json_atomic(report_path, report)
         return report
+
+    def import_assist(self, houdini_version: str) -> int:
+        paths = VersionPaths.for_version(houdini_version, data_root=self.data_root)
+        if not paths.database.is_file():
+            raise HouDocsError("docs_index_missing", "Run houdocs init first.")
+        if not paths.docs.is_dir():
+            raise HouDocsError(
+                "docs_cache_missing",
+                f"Documentation cache is missing for Houdini {houdini_version}.",
+            )
+
+        unresolved_file = unresolved_path(paths.reports, houdini_version)
+        if not unresolved_file.is_file():
+            raise HouDocsError(
+                "node_assist_missing",
+                f"Node assist report is missing for Houdini {houdini_version}.",
+            )
+
+        node_dump_path = paths.reports / f"houdini-node-types-{houdini_version}.json"
+        try:
+            payload = json.loads(node_dump_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HouDocsError(
+                "node_runtime_dump_missing",
+                f"Unable to read saved Houdini node metadata for {houdini_version}.",
+                detail=str(exc),
+            ) from exc
+
+        rows = payload.get("node_types") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise HouDocsError(
+                "node_runtime_dump_invalid",
+                f"Saved Houdini node metadata is invalid for {houdini_version}.",
+            )
+
+        result = NodeIndexer(
+            documents=DocumentRepository(paths.database),
+            repository=NodeRepository(paths.database),
+            docs_directory=paths.docs,
+            report_directory=paths.reports,
+        ).index_all(
+            tuple(item for item in rows if isinstance(item, dict)),
+            houdini_version=houdini_version,
+        )
+        return int(result.get("parameter_resolved_by_manual", 0))
 
     @staticmethod
     def _collect_runtime_issues(snapshot: RuntimeSnapshot, reporter: InitReporter) -> None:

@@ -129,14 +129,43 @@ def init_command(
             "--progress", help="Show interactive initialization progress on a TTY."
         ),
     ] = False,
+    import_assist: Annotated[
+        bool,
+        typer.Option(
+            "--import-assist",
+            help="Apply saved node assist overrides to the existing documentation database.",
+        ),
+    ] = False,
 ) -> None:
     progress_view = InitProgress(progress)
 
     def action() -> None:
+        config = load_config()
+        requested_version = resolve_requested_version(houdini_version, config=config)
+        service = InitService()
+
+        if import_assist:
+            version = resolve_initialized_version(requested_version)
+            imported = service.import_assist(version)
+            typer.echo(f"Imported {imported} assist overrides.")
+            return
+
+        def confirm_rebuild(paths: VersionPaths) -> None:
+            progress_view.finish()
+            if not typer.confirm(
+                f"Existing HouDocs database for Houdini {paths.version} will be rebuilt. Continue?",
+                default=False,
+                err=True,
+            ):
+                raise typer.Exit()
+
         try:
-            config = load_config()
-            version = resolve_requested_version(houdini_version, config=config)
-            result = InitService().run(version, config=config, progress=progress_view)
+            result = service.run(
+                requested_version,
+                config=config,
+                progress=progress_view,
+                confirm_rebuild=confirm_rebuild,
+            )
         finally:
             progress_view.finish()
         _emit(_init_summary(result))

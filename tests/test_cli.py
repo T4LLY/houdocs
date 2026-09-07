@@ -373,10 +373,16 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
     ).read("Sop/example") == {
         "parameters": [
             {
+                "id": "current_name",
+                "label": "Current Label",
+                "tokens": 0,
+                "type": "String",
+            },
+            {
                 "ordinal": 0,
                 "label": "Legacy Label",
                 "tokens": 14,
-            }
+            },
         ]
     }
     paths.search_database.write_bytes(b"search-index-sentinel")
@@ -398,7 +404,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
         "parameters": [
             {
                 "id": "current_name",
-                "label": "Legacy Label",
+                "label": "Current Label",
                 "tokens": 14,
                 "type": "String",
             }

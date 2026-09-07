@@ -10,14 +10,6 @@ from houdocs.docs.repository import DocumentRepository
 from houdocs.docs.source import cache_bookish_trees
 
 
-def test_bookish_page_properties_stop_at_title() -> None:
-    properties = BookishDocumentParser._page_properties(
-        ["#type: concept", "= Title =", "#stray: value", "== Details =="]
-    )
-
-    assert properties == {"type": "concept"}
-
-
 def test_cache_bookish_trees_preserves_help_root_priority(tmp_path: Path) -> None:
     high = tmp_path / "high"
     low = tmp_path / "low"

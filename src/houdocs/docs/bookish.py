@@ -221,7 +221,7 @@ class BookishDocumentParser:
         properties: dict[str, str] = {}
         for line in lines:
             heading_match = _HEADING_RE.match(line.rstrip())
-            if heading_match:
+            if heading_match and len(heading_match.group("marks")) >= 2:
                 break
             at_match = _AT_SECTION_RE.match(line.rstrip())
             if at_match and at_match.group("name").casefold() in _AT_SECTIONS:

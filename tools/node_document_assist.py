@@ -35,6 +35,7 @@ REPLACED_CANDIDATE_HINTS: dict[str, set[str]] = {
     }
 }
 
+
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -88,6 +89,7 @@ def _report_dir(version: str) -> Path:
 
 def _state_path(version: str) -> Path:
     return _report_dir(version) / f"node-document-assist-state-{version}.json"
+
 
 def _load_state(version: str) -> dict[str, Any]:
     path = _state_path(version)
@@ -161,10 +163,7 @@ def _remove_lifecycle_key(
     after = [
         item
         for item in before
-        if not (
-            item.get("document") == document
-            and item.get("doc_ordinal") == ordinal
-        )
+        if not (item.get("document") == document and item.get("doc_ordinal") == ordinal)
     ]
     lifecycle["parameters"] = after
     return len(after) != len(before)
@@ -234,8 +233,8 @@ def _progress_counts(
     resolved_keys = _override_keys(payload) & unresolved_keys
     skipped_keys = (_skipped_keys(state) & unresolved_keys) - resolved_keys
     lifecycle_keys = (
-        _lifecycle_keys(lifecycle) & unresolved_keys
-    ) - resolved_keys - skipped_keys
+        (_lifecycle_keys(lifecycle) & unresolved_keys) - resolved_keys - skipped_keys
+    )
     remaining_keys = unresolved_keys - resolved_keys - skipped_keys - lifecycle_keys
 
     lifecycle_counts = {
@@ -328,11 +327,7 @@ def _classify_lifecycle_entries(
         if not isinstance(document, str) or not isinstance(ordinal, int):
             continue
         key = (document, ordinal)
-        if (
-            key in resolved_keys
-            or key in skipped_keys
-            or key in lifecycle_keys
-        ):
+        if key in resolved_keys or key in skipped_keys or key in lifecycle_keys:
             continue
 
         node = entry.get("node")
@@ -413,7 +408,7 @@ def _node_dump(nodes_path: Path) -> tuple[dict[str, dict[str, Any]], str | None]
 
         canonical = row.get("canonical_name")
         if isinstance(canonical, str) and canonical:
-            nodes.setdefault(_normalize(canonical), row)
+            nodes[_normalize(canonical)] = row
 
     version = payload.get("houdini_version")
     return nodes, str(version) if isinstance(version, str) else None
@@ -456,17 +451,13 @@ def _assist_item(
     label = str(entry.get("label") or "")
     label_key = _normalize(label)
     candidates = [
-        row["id"]
-        for row in runtime
-        if _normalize(row.get("label")) == label_key
+        row["id"] for row in runtime if _normalize(row.get("label")) == label_key
     ]
     return {
         "doc_ordinal": int(entry["doc_ordinal"]),
         "label": label,
         "group_path": (
-            entry.get("group_path")
-            if isinstance(entry.get("group_path"), list)
-            else []
+            entry.get("group_path") if isinstance(entry.get("group_path"), list) else []
         ),
         "reason": entry.get("reason"),
         "explicit_ids": (
@@ -488,7 +479,9 @@ def _assist_item(
     }
 
 
-def _load_inputs(version: str | None) -> tuple[
+def _load_inputs(
+    version: str | None,
+) -> tuple[
     Path,
     Path,
     str,
@@ -537,9 +530,7 @@ def _target_entries(
     current = state.get("current")
     if isinstance(current, dict) and current.get("node") == node:
         document = current.get("document")
-        current_matches = [
-            item for item in entries if item.get("document") == document
-        ]
+        current_matches = [item for item in entries if item.get("document") == document]
         if current_matches:
             entries = current_matches
 
@@ -557,7 +548,9 @@ def command_next(args: argparse.Namespace) -> int:
     ) = _load_inputs(args.version)
 
     lifecycle = _load_lifecycle(version)
-    excluded = _override_keys(payload) | _skipped_keys(state) | _lifecycle_keys(lifecycle)
+    excluded = (
+        _override_keys(payload) | _skipped_keys(state) | _lifecycle_keys(lifecycle)
+    )
 
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     order: list[tuple[str, str]] = []
@@ -608,10 +601,7 @@ def command_next(args: argparse.Namespace) -> int:
 
     node, document = selected
     runtime = _runtime_parameters(runtime_node)
-    unresolved = [
-        _assist_item(entry, runtime)
-        for entry in groups[selected]
-    ]
+    unresolved = [_assist_item(entry, runtime) for entry in groups[selected]]
 
     state["current"] = {"node": node, "document": document}
     _write_state(version, state)
@@ -743,10 +733,7 @@ def command_skip(args: argparse.Namespace) -> int:
         state,
     ) = _load_inputs(args.version)
 
-    skipped = [
-        item for item in state.get("skipped", [])
-        if isinstance(item, dict)
-    ]
+    skipped = [item for item in state.get("skipped", []) if isinstance(item, dict)]
     skipped_keys = _skipped_keys(state)
     added: list[dict[str, Any]] = []
 
@@ -812,9 +799,7 @@ def command_reset_skip(args: argparse.Namespace) -> int:
     # node is missing from the current runtime. This prevents them from being
     # mixed into a second-model retry after reset-skip.
     lifecycle = _load_lifecycle(version)
-    classified = _classify_lifecycle_entries(
-        payload, state, nodes, version, lifecycle
-    )
+    classified = _classify_lifecycle_entries(payload, state, nodes, version, lifecycle)
     if classified["classified"]:
         _write_lifecycle(version, lifecycle)
 
@@ -849,9 +834,7 @@ def command_classify_lifecycle(args: argparse.Namespace) -> int:
     ) = _load_inputs(args.version)
 
     lifecycle = _load_lifecycle(version)
-    added = _classify_lifecycle_entries(
-        payload, state, nodes, version, lifecycle
-    )
+    added = _classify_lifecycle_entries(payload, state, nodes, version, lifecycle)
     if added["classified"]:
         _write_lifecycle(version, lifecycle)
 
@@ -894,7 +877,6 @@ def command_stats(args: argparse.Namespace) -> int:
         )
     )
     return 0
-
 
 
 def build_parser() -> argparse.ArgumentParser:

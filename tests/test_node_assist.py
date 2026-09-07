@@ -83,7 +83,34 @@ def _bind_paths(tool, tmp_path: Path, unresolved: Path, nodes: Path) -> None:
     tool._report_dir = lambda version: reports
 
 
-def test_assist_next_emits_compact_runtime_grounded_json(tmp_path: Path, capsys) -> None:
+def test_node_dump_uses_last_record_for_all_duplicate_keys(tmp_path: Path) -> None:
+    tool = _load_tool()
+    nodes = tmp_path / "nodes.json"
+    nodes.write_text(
+        json.dumps(
+            {
+                "node_types": [
+                    {"category": "Sop", "name": "old", "canonical_name": "Sop/example"},
+                    {
+                        "category": "Sop",
+                        "name": "example",
+                        "canonical_name": "Sop/example",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    dump, version = tool._node_dump(nodes)
+
+    assert version is None
+    assert dump["sop/example"]["name"] == "example"
+
+
+def test_assist_next_emits_compact_runtime_grounded_json(
+    tmp_path: Path, capsys
+) -> None:
     tool = _load_tool()
     unresolved, nodes = _assist_files(tmp_path)
     _bind_paths(tool, tmp_path, unresolved, nodes)
@@ -98,7 +125,9 @@ def test_assist_next_emits_compact_runtime_grounded_json(tmp_path: Path, capsys)
     assert payload["runtime_parameters"][0]["id"] == "current_name"
 
 
-def test_assist_resolve_validates_runtime_id_and_persists_override(tmp_path: Path, capsys) -> None:
+def test_assist_resolve_validates_runtime_id_and_persists_override(
+    tmp_path: Path, capsys
+) -> None:
     tool = _load_tool()
     unresolved, nodes = _assist_files(tmp_path)
     _bind_paths(tool, tmp_path, unresolved, nodes)
@@ -126,7 +155,9 @@ def test_assist_resolve_validates_runtime_id_and_persists_override(tmp_path: Pat
     assert result["resolved"] is True
 
 
-def test_assist_skip_persists_state_without_editing_unresolved(tmp_path: Path, capsys) -> None:
+def test_assist_skip_persists_state_without_editing_unresolved(
+    tmp_path: Path, capsys
+) -> None:
     tool = _load_tool()
     unresolved, nodes = _assist_files(tmp_path)
     original = unresolved.read_text(encoding="utf-8")
@@ -134,9 +165,10 @@ def test_assist_skip_persists_state_without_editing_unresolved(tmp_path: Path, c
     tool.command_next(Namespace(version=None))
     capsys.readouterr()
 
-    assert tool.command_skip(
-        Namespace(version=None, node="Sop/example", doc_ordinals=[0])
-    ) == 0
+    assert (
+        tool.command_skip(Namespace(version=None, node="Sop/example", doc_ordinals=[0]))
+        == 0
+    )
 
     state = json.loads(
         (tmp_path / "reports" / "node-document-assist-state-22.0.429.json").read_text(
@@ -164,4 +196,6 @@ def test_assist_rejects_parameter_ids_missing_from_runtime(tmp_path: Path) -> No
     except SystemExit as exc:
         assert "Unknown runtime parameter id" in str(exc)
     else:
-        raise AssertionError("resolve accepted a parameter ID absent from the runtime dump")
+        raise AssertionError(
+            "resolve accepted a parameter ID absent from the runtime dump"
+        )

@@ -15,6 +15,7 @@ from houdocs.python_docs.parser import _group_signatures
 from houdocs.python_docs.signature import parse_python_signature
 from houdocs.python_docs.repository import PythonRepository
 from houdocs.vex_docs.index import VexIndexer
+from houdocs.vex_docs.read import VexDocumentReader
 from houdocs.vex_docs.repository import VexRepository
 
 
@@ -332,3 +333,39 @@ xyzdist(0, P);
     assert json.loads(row["tags_json"]) == ["distance", "geometry"]
     assert row["status"] == "stable"
     assert "text" not in columns
+
+def test_vex_index_uses_filename_when_real_page_title_is_stale(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    vex = source / "vex" / "functions"
+    vex.mkdir(parents=True)
+    (vex / "pxnoise.txt").write_text(
+        "= xnoise =\n\n#type: vex\n#context: all\n\n:usage: `float|vector pxnoise(float x, int xp)`\n",
+        encoding="utf-8",
+    )
+    (vex / "xnoise.txt").write_text(
+        "= xnoise =\n\n#type: vex\n#context: all\n\n:usage: `float xnoise(float x)`\n",
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    documents = _index_base_documents(source, state)
+
+    result = VexIndexer(
+        documents=documents,
+        repository=VexRepository(state / "docs.db"),
+        docs_directory=state / "docs",
+    ).index_all()
+
+    assert result == {"documents": 2, "functions": 2, "duplicates": 0, "failed": 0}
+    pxnoise = VexRepository(state / "docs.db").get("pxnoise")
+    xnoise = VexRepository(state / "docs.db").get("xnoise")
+    assert pxnoise is not None
+    assert xnoise is not None
+    assert pxnoise.signatures == ("float|vector pxnoise(float x, int xp)",)
+    assert xnoise.signatures == ("float xnoise(float x)",)
+
+    article = VexDocumentReader(
+        documents=documents,
+        repository=VexRepository(state / "docs.db"),
+    ).read("pxnoise")
+    assert article["text"].startswith("pxnoise\n")
+    assert ":usage:" not in article["text"]

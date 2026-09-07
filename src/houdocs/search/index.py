@@ -13,6 +13,7 @@ from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.models import SearchEntry
 from houdocs.search.store import SearchStore
 from houdocs.search.tokens import count_openai_tokens
+from houdocs.vex_docs.parser import normalize_vex_text
 from houdocs.vex_docs.repository import VexRepository
 
 
@@ -181,10 +182,15 @@ class SearchIndexer:
             if text is None:
                 text = str(document_reader.page(document)["text"])
                 page_cache[record.document_id] = text
+            readable_text = normalize_vex_text(
+                text,
+                record.function_name,
+                record.signatures,
+            )
             content = _specialized_content(
                 record.function_name,
                 record.signatures,
-                text,
+                readable_text,
             )
             entries.append(
                 SearchEntry(
@@ -194,7 +200,7 @@ class SearchIndexer:
                     content=content,
                     content_hash=_content_hash(content),
                     embedding_profile=self.embedding_profile,
-                    token_count=self.token_counter(text),
+                    token_count=self.token_counter(readable_text),
                     metadata={
                         "document_id": record.document_id,
                         "function": record.function_name,

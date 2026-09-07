@@ -3,6 +3,7 @@ from __future__ import annotations
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
+from houdocs.vex_docs.parser import normalize_vex_text
 from houdocs.vex_docs.repository import VexRepository
 
 
@@ -23,6 +24,11 @@ class VexDocumentReader:
                 f"VEX documentation not found: {name}",
             )
         document = self.documents.document(record.document_id)
+        text = normalize_vex_text(
+            str(self.document_reader.page(document)["text"]),
+            record.function_name,
+            record.signatures,
+        )
         return {
             "function": record.function_name,
             "document": document.title,
@@ -33,5 +39,5 @@ class VexDocumentReader:
             "group": record.group_name,
             "tags": list(record.tags),
             "status": record.status,
-            "text": self.document_reader.page(document)["text"],
+            "text": text,
         }

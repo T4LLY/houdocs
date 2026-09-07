@@ -134,7 +134,7 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
         encoding="utf-8",
     )
     (source / "vex" / "functions" / "xyzdist.txt").write_text(
-        "= xyzdist =\n\n#type: vex\n#context: sop\n#group: geometry\n\nfloat xyzdist(int geo, vector p):\n    Distance.\n",
+        "= xyzdist =\n\n#type: vex\n#context: sop\n#group: geometry\n\n:usage: `float xyzdist(int geo, vector p)`\n    Distance.\n",
         encoding="utf-8",
     )
     (source / "nodes" / "sop" / "example.txt").write_text(
@@ -191,9 +191,14 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
 
     assert py["kind"] == "method"
     assert py["signatures"] == ["setInput(self, input_index, node)"]
+    assert py["text"].startswith("setInput(self, input_index, node)")
+    assert "::`" not in py["text"]
     assert "Connect input." in py["text"]
     assert vex["contexts"] == ["sop"]
     assert vex["group"] == "geometry"
+    assert vex["signatures"] == ["float xyzdist(int geo, vector p)"]
+    assert ":usage:" not in vex["text"]
+    assert "float xyzdist(int geo, vector p)" in vex["text"]
     assert "Distance." in vex["text"]
     assert node == {
         "parameters": [

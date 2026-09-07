@@ -505,7 +505,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert token_counts["node:node#0"] == _test_token_count("copy geometry to points")
     assert token_counts["hom:hou.Node"] == _test_token_count(hom_text)
     assert token_counts["hom:hou.Node.setInput"] == _test_token_count(
-        "::`setInput(self, input_index, node)`:\n    Connect another node."
+        "setInput(self, input_index, node)\n    Connect another node."
     )
     assert token_counts["vex:xyzdist"] == _test_token_count(vex_section.text)
 

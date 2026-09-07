@@ -74,5 +74,12 @@ def extract_hom_member(text: str, member: str) -> tuple[str, str] | None:
         if parsed is not None and parsed[0] != member:
             end = index
             break
-    block = "\n".join(lines[start:end]).strip()
+    block_lines: list[str] = []
+    for line in lines[start:end]:
+        parsed = parse_python_signature(line)
+        if parsed is not None and parsed[0] == member:
+            block_lines.append(parsed[1])
+        else:
+            block_lines.append(line)
+    block = "\n".join(block_lines).strip()
     return signature, block

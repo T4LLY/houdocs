@@ -30,14 +30,18 @@ def parse_vex_document(document: Document, source: str) -> VexDocumentRecord | N
 
 
 def _function_name(document: Document, source: str) -> str | None:
+    # Real Houdini VEX docs contain a few stale page titles. The filename is
+    # the canonical function name for vex/functions/<function>.txt.
+    stem = PurePosixPath(document.relative_path).stem
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", stem):
+        return stem
     for line in source.splitlines():
         match = _HEADING_RE.match(line.rstrip())
         if match:
             title = match.group("title").strip()
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", title):
                 return title
-    stem = PurePosixPath(document.relative_path).stem
-    return stem if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", stem) else None
+    return None
 
 
 def _split_values(value: str | None) -> tuple[str, ...]:
@@ -63,8 +67,8 @@ def _vex_signatures(source: str, function: str) -> list[str]:
             continue
         if len(line) - len(line.lstrip(" ")) > 4:
             continue
-        value = stripped.strip("`*_ ").rstrip(":").strip()
-        if not pattern.search(value):
+        value = normalize_vex_signature(stripped)
+        if value is None or not pattern.search(value):
             continue
         if len(value) > 300 or value.endswith((".", ":")):
             continue
@@ -72,3 +76,36 @@ def _vex_signatures(source: str, function: str) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+def normalize_vex_signature(line: str) -> str | None:
+    value = line.strip()
+    if not value:
+        return None
+    value = re.sub(r"^:usage:\s*", "", value, flags=re.IGNORECASE)
+    value = value.rstrip(":").strip()
+    if value.startswith("`") and value.endswith("`") and len(value) >= 2:
+        value = value[1:-1].strip()
+    value = value.strip("*_ ")
+    return value or None
+
+
+def normalize_vex_text(
+    text: str,
+    function: str,
+    signatures: tuple[str, ...],
+) -> str:
+    if not text:
+        return text
+    known = set(signatures)
+    output: list[str] = []
+    for index, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if index == 0 and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", stripped):
+            output.append(function)
+            continue
+        normalized = normalize_vex_signature(line)
+        if normalized in known:
+            output.append(normalized)
+        else:
+            output.append(line)
+    return "\n".join(output).strip()

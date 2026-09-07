@@ -249,28 +249,35 @@ class HybridSearchBackend:
         if top_k <= 0:
             return []
         candidate_limit = max(top_k * self.candidate_multiplier, self.candidate_min)
-        profile = self._profile_for(namespaces)
-        if not profile:
+        profiles = self._profiles_for(namespaces)
+        if not profiles:
             return []
         lexical = self.lexical.search(
             query, namespaces=namespaces, limit=candidate_limit
         )
-        query_vectors = self.embeddings.encode([query], profile)
-        if len(query_vectors) != 1:
-            raise HouDocsError(
-                "embedding_protocol_error",
-                "Embedding provider returned the wrong query vector count.",
+        dense_rankings: list[list[str]] = []
+        for profile in profiles:
+            query_vectors = self.embeddings.encode([query], profile)
+            if len(query_vectors) != 1:
+                raise HouDocsError(
+                    "embedding_protocol_error",
+                    "Embedding provider returned the wrong query vector count.",
+                )
+            dense_rankings.append(
+                self.dense.search(
+                    profile,
+                    query_vectors[0],
+                    namespaces=namespaces,
+                    top_k=candidate_limit,
+                )
             )
-        dense = self.dense.search(
-            profile,
-            query_vectors[0],
-            namespaces=namespaces,
-            top_k=candidate_limit,
-        )
-        scores = reciprocal_rank_fusion([dense, lexical], k=self.rrf_k)
+        scores = reciprocal_rank_fusion([*dense_rankings, lexical], k=self.rrf_k)
         if not scores:
             return []
-        dense_ranks = {entry_id: rank for rank, entry_id in enumerate(dense, start=1)}
+        dense_ranks: dict[str, int] = {}
+        for dense in dense_rankings:
+            for rank, entry_id in enumerate(dense, start=1):
+                dense_ranks.setdefault(entry_id, rank)
         lexical_ranks = {
             entry_id: rank for rank, entry_id in enumerate(lexical, start=1)
         }
@@ -293,20 +300,21 @@ class HybridSearchBackend:
             for entry_id in ranked
         ]
 
-    def _profile_for(self, namespaces: Sequence[str]) -> str:
+    def _profiles_for(self, namespaces: Sequence[str]) -> list[str]:
         if not namespaces:
-            return ""
+            return []
         placeholders = ",".join("?" for _ in namespaces)
         with self._connect() as connection:
-            row = connection.execute(
+            rows = connection.execute(
                 f"""
                 SELECT embedding_profile_id FROM search_entries
                 WHERE is_current = 1 AND namespace IN ({placeholders})
-                ORDER BY embedding_profile_id LIMIT 1
+                GROUP BY embedding_profile_id
+                ORDER BY embedding_profile_id
                 """,
                 tuple(namespaces),
-            ).fetchone()
-        return str(row["embedding_profile_id"]) if row is not None else ""
+            ).fetchall()
+        return [str(row["embedding_profile_id"]) for row in rows]
 
     def _profiles_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, str]:
         if not entry_ids:

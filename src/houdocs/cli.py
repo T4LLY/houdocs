@@ -21,6 +21,7 @@ from houdocs.search.domain import SearchDomain
 from houdocs.search.embedding import Model2VecEmbeddingProvider
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.service import DocumentSearchService
+from houdocs.search.tokens import count_openai_tokens
 from houdocs.vex_docs.read import VexDocumentReader
 from houdocs.vex_docs.repository import VexRepository
 
@@ -260,6 +261,7 @@ def node_command(
             NodeReader(
                 documents=documents,
                 repository=NodeRepository(paths.database),
+                token_counter=count_openai_tokens,
             ).read(node_type)
         )
 

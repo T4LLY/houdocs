@@ -227,7 +227,9 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
         documents=docs, repository=VexRepository(state / "docs.db")
     ).read("xyzdist")
     node = NodeReader(
-        documents=docs, repository=NodeRepository(state / "docs.db")
+        documents=docs,
+        repository=NodeRepository(state / "docs.db"),
+        token_counter=len,
     ).read("Sop/example")
 
     assert py["kind"] == "method"
@@ -246,11 +248,16 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
             {
                 "id": "strength",
                 "label": "Strength",
-                "description": "Amount.",
+                "tokens": 7,
                 "type": "Float",
             }
         ]
     }
+    assert NodeReader(
+        documents=docs,
+        repository=NodeRepository(state / "docs.db"),
+        token_counter=len,
+    ).read("Sop/example/parameters/strength") == {"description": "Amount."}
 
 
 
@@ -387,32 +394,55 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
         ]
     )
 
-    node = NodeReader(documents=documents, repository=repository).read("sop/example")
+    node = NodeReader(
+        documents=documents, repository=repository, token_counter=len
+    ).read("sop/example")
 
     assert node == {
         "inputs": [
-            {"label": "Source", "description": "Source geometry."},
-            {"label": "Target", "description": "Target geometry."},
+            {"label": "Source", "tokens": 16},
+            {"label": "Target", "tokens": 16},
         ],
         "outputs": [
-            {"label": "Output", "description": "Result geometry."},
+            {"label": "Output", "tokens": 16},
         ],
         "parameters": [
             {
                 "id": "group",
                 "label": "Group",
-                "description": "Select geometry.",
+                "tokens": 16,
                 "type": "String",
             },
             {
                 "id": "bindings",
                 "label": "Group Bindings",
-                "description": "Repeated bindings.",
+                "tokens": 18,
                 "type": "Folder",
                 "multiparm": True,
             },
+            {
+                "ordinal": 2,
+                "label": "Unknown",
+                "tokens": 25,
+            },
         ],
         "related": ["sop/copy", "/model/copying"],
+    }
+
+    reader = NodeReader(
+        documents=documents, repository=repository, token_counter=len
+    )
+    assert reader.read("sop/example/inputs/0") == {"description": "Source geometry."}
+    assert reader.read("sop/example/inputs/1") == {"description": "Target geometry."}
+    assert reader.read("sop/example/outputs/0") == {"description": "Result geometry."}
+    assert reader.read("sop/example/parameters/group") == {
+        "description": "Select geometry."
+    }
+    assert reader.read("sop/example/parameters/bindings") == {
+        "description": "Repeated bindings."
+    }
+    assert reader.read("sop/example/parameters/2") == {
+        "description": "Unresolved documentation."
     }
 
 

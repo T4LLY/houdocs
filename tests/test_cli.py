@@ -369,7 +369,16 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
     assert NodeReader(
         documents=documents,
         repository=NodeRepository(paths.database),
-    ).read("Sop/example") == {}
+        token_counter=len,
+    ).read("Sop/example") == {
+        "parameters": [
+            {
+                "ordinal": 0,
+                "label": "Legacy Label",
+                "tokens": 14,
+            }
+        ]
+    }
     paths.search_database.write_bytes(b"search-index-sentinel")
 
     result = runner.invoke(
@@ -384,12 +393,13 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
     assert NodeReader(
         documents=DocumentRepository(paths.database),
         repository=NodeRepository(paths.database),
+        token_counter=len,
     ).read("Sop/example") == {
         "parameters": [
             {
                 "id": "current_name",
                 "label": "Legacy Label",
-                "description": "Documentation.",
+                "tokens": 14,
                 "type": "String",
             }
         ]
@@ -499,3 +509,92 @@ def test_init_import_assist_failure_preserves_report_and_node_metadata(tmp_path:
     assert getattr(raised.value, "error", None).code == "node_index_incomplete"
     assert unresolved_path.read_bytes() == report_before
     assert NodeRepository(paths.database).count() == before_count
+
+
+def test_node_command_lists_token_costs_and_reads_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import houdocs.cli as cli_module
+    from houdocs.docs.models import Document
+    from houdocs.node.models import (
+        NodeParameter,
+        NodeParameterDoc,
+        NodeParameterLink,
+        NodeTypeDocument,
+    )
+    from houdocs.node.repository import NodeRepository
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    documents = DocumentRepository(paths.database)
+    documents.replace_document(
+        Document(
+            "node-doc",
+            "Example",
+            "nodes/sop/example.txt",
+            "node-doc",
+            "22.0.429",
+            "Example body",
+        ),
+        [],
+    )
+    NodeRepository(paths.database).replace_all(
+        [
+            (
+                NodeTypeDocument(
+                    "Sop/example",
+                    "node-doc",
+                    "sop",
+                    None,
+                    "example",
+                    None,
+                    "Sop",
+                    "Sop/example",
+                    1000,
+                    "houdini",
+                    None,
+                ),
+                (
+                    NodeParameter(
+                        "p0",
+                        "Sop/example",
+                        0,
+                        "strength",
+                        "Strength",
+                        (),
+                        "parmTemplateType.Float",
+                        False,
+                        True,
+                    ),
+                ),
+                (
+                    NodeParameterDoc(
+                        "d0",
+                        "Sop/example",
+                        0,
+                        "Strength",
+                        (),
+                        "Amount.",
+                        (),
+                        None,
+                    ),
+                ),
+                (NodeParameterLink("d0", "p0", 0, "houdini-label"),),
+                (),
+                (),
+            )
+        ]
+    )
+    monkeypatch.setattr(cli_module, "count_openai_tokens", len)
+
+    listing = runner.invoke(app, ["node", "sop/example"])
+    detail = runner.invoke(app, ["node", "sop/example/parameters/strength"])
+
+    assert listing.exit_code == 0
+    assert json.loads(listing.stdout) == {
+        "parameters": [
+            {"id": "strength", "label": "Strength", "tokens": 7, "type": "Float"}
+        ]
+    }
+    assert detail.exit_code == 0
+    assert json.loads(detail.stdout) == {"description": "Amount."}

@@ -49,11 +49,15 @@ The public read command SHALL accept a page positional argument, an optional sec
 
 ### Requirement: Keep specialist readers identifier-only
 
-The public `node`, `hom`, and `vex` commands SHALL each accept one specialist identifier and SHALL return their complete structured specialist result rather than exposing output-filter options.
+The public `node`, `hom`, and `vex` commands SHALL each accept one specialist identifier rather than exposing output-filter options. `node` MAY extend the node identifier with a detail path for one input, output, or parameter.
 
 #### Scenario: Request node documentation
 - **WHEN** the caller runs `houdocs node Sop/attribwrangle`
-- **THEN** the command uses `Sop/attribwrangle` as the complete node-type identifier
+- **THEN** the command uses `Sop/attribwrangle` as the node-type identifier
+
+#### Scenario: Request one node parameter description
+- **WHEN** the caller runs `houdocs node Sop/attribwrangle/parameters/snippet`
+- **THEN** the command resolves `Sop/attribwrangle` and returns only the description for parameter `snippet`
 
 #### Scenario: Request HOM documentation
 - **WHEN** the caller runs `houdocs hom hou.Node.setInput`

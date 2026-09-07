@@ -52,10 +52,20 @@ The public command SHALL be `houdocs read <page> [section] [--pick N]`. A page n
 
 #### Scenario: Read a Node type
 - **WHEN** `node_documents` contains `Sop/attribwrangle`
-- **THEN** `houdocs node Sop/attribwrangle` returns only non-empty inputs, outputs, resolved operational parameters, and resolved related targets
+- **THEN** `houdocs node Sop/attribwrangle` returns only non-empty inputs, outputs, parameters, and resolved related targets
+- **AND** input/output entries contain `label` and `tokens` but not `description`
 - **AND** port order represents port index without a repeated `index` field
-- **AND** parameter runtime metadata is flattened to `id`, `label`, `description`, `type`, and `multiparm: true` only when applicable
-- **AND** the response does not repeat node identity, document metadata, page text, null values, empty arrays, or resolution diagnostics
+- **AND** resolved parameters contain `id`, `label`, `tokens`, `type`, and `multiparm: true` only when applicable
+- **AND** a parameter with no resolved runtime ID contains `ordinal`, `label`, and `tokens` instead
+- **AND** `tokens` is the OpenAI token count of the description returned by the matching detail path
+- **AND** the response does not repeat node identity, document metadata, page text, null values, empty arrays, resolution diagnostics, or descriptions
+
+#### Scenario: Read one Node detail
+- **WHEN** the caller requests `houdocs node Sop/attribwrangle/parameters/snippet`
+- **THEN** the response contains only that parameter's `description`
+- **AND** `parameters/<id>` addresses resolved parameters
+- **AND** `parameters/<doc_ordinal>` addresses parameters without a resolved runtime ID
+- **AND** `inputs/<index>` and `outputs/<index>` address ports by their displayed array order
 
 ### Requirement: Resolve the effective initialized Houdini version without reader options
 

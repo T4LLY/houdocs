@@ -134,6 +134,51 @@ def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
     assert third["indexed"] == 1
 
 
+def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
+    class FailingEmbeddings:
+        def encode(self, texts, profile):
+            del texts, profile
+            raise RuntimeError("embedding service unavailable")
+
+    docs = DocumentRepository(tmp_path / "docs.db")
+    docs.replace_document(
+        Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
+        [_section("doc", 0, "Alpha", "alpha")],
+    )
+    database = tmp_path / "search.db"
+    store = SearchStore(database)
+    failed_backend = HybridSearchBackend(
+        database=database,
+        embeddings=FailingEmbeddings(),
+        dense_index=FakeDense(),
+    )
+
+    with pytest.raises(RuntimeError, match="embedding service unavailable"):
+        SearchIndexer(
+            documents=docs,
+            backend=failed_backend,
+            store=store,
+            embedding_profile="p1",
+        ).index_all()
+
+    assert failed_backend.entry_states("docs") == {}
+
+    dense = FakeDense()
+    retry = SearchIndexer(
+        documents=docs,
+        backend=HybridSearchBackend(
+            database=database,
+            embeddings=FakeEmbeddings(),
+            dense_index=dense,
+        ),
+        store=store,
+        embedding_profile="p1",
+    ).index_all()
+
+    assert retry["indexed"] == 1
+    assert dense.entries == ["doc#0"]
+
+
 def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> None:
     database = tmp_path / "search.db"
     backend = HybridSearchBackend(

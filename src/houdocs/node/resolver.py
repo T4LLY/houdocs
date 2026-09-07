@@ -20,20 +20,25 @@ from houdocs.node.models import (
     RuntimeNodeType,
     RuntimeParameter,
 )
-from houdocs.node.parser import category_for_context, node_type_lookup, strict_node_lookup
+from houdocs.node.parser import (
+    category_for_context,
+    node_type_lookup,
+    strict_node_lookup,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
+
 
 class NodeTypeCatalog:
     def __init__(self, nodes: tuple[RuntimeNodeType, ...] = ()) -> None:
         self._nodes = {
-            (_normalize_key(node.context), _normalize_key(node.requested_internal_name)): node
+            (
+                _normalize_key(node.context),
+                _normalize_key(node.requested_internal_name),
+            ): node
             for node in nodes
         }
-        self._canonical = {
-            _normalize_key(node.canonical_name): node
-            for node in nodes
-        }
+        self._canonical = {_normalize_key(node.canonical_name): node for node in nodes}
 
     def resolve(self, lookup: NodeTypeLookup) -> RuntimeNodeType | None:
         return self._nodes.get(
@@ -49,7 +54,9 @@ class NodeTypeCatalog:
             return None
         return f"{category}/{lookup.internal_name}"
 
-    def runtime_for_canonical(self, canonical_name: str | None) -> RuntimeNodeType | None:
+    def runtime_for_canonical(
+        self, canonical_name: str | None
+    ) -> RuntimeNodeType | None:
         if not canonical_name:
             return None
         return self._canonical.get(_normalize_key(canonical_name))
@@ -73,6 +80,7 @@ def _node_document_priority(
     if stem.endswith("-"):
         score -= 20
     return score
+
 
 def build_node_metadata(
     *,
@@ -115,7 +123,11 @@ def build_node_metadata(
     else:
         category = None
         resolution_source = None
-        node_reason = "missing_context_or_internal" if not context or not internal_name else "unknown_context"
+        node_reason = (
+            "missing_context_or_internal"
+            if not context or not internal_name
+            else "unknown_context"
+        )
 
     lookup_internal = lookup.internal_name if lookup is not None else internal_name
     node_type_id = hashlib.sha256(
@@ -135,7 +147,13 @@ def build_node_metadata(
         unresolved_reason=node_reason,
     )
 
-    parameter_rows, parameter_docs, parameter_links, parameter_counts, parameter_unresolved = _resolve_parameters(
+    (
+        parameter_rows,
+        parameter_docs,
+        parameter_links,
+        parameter_counts,
+        parameter_unresolved,
+    ) = _resolve_parameters(
         node_type_id=node_type_id,
         relative_path=relative_path,
         canonical_name=canonical_name,
@@ -166,14 +184,18 @@ def build_node_metadata(
         "node_type_unresolved": 1 if node_reason else 0,
     }
     unresolved = {
-        "node_types": [] if node_reason is None else [{
-            "document": relative_path,
-            "context": context or None,
-            "namespace": node_doc.namespace,
-            "internal_name": internal_name or None,
-            "version": node_doc.version,
-            "reason": node_reason,
-        }],
+        "node_types": []
+        if node_reason is None
+        else [
+            {
+                "document": relative_path,
+                "context": context or None,
+                "namespace": node_doc.namespace,
+                "internal_name": internal_name or None,
+                "version": node_doc.version,
+                "reason": node_reason,
+            }
+        ],
         "parameters": parameter_unresolved,
         "related": related_unresolved,
     }
@@ -187,7 +209,6 @@ def build_node_metadata(
         counts,
         unresolved,
     )
-
 
 
 def _resolve_ports(
@@ -229,7 +250,9 @@ def _ports_for_direction(
     result: list[NodePort] = []
     for index in range(count):
         field = documented[index] if index < len(documented) else None
-        label = field.label if field is not None and field.label else f"{title} {index + 1}"
+        label = (
+            field.label if field is not None and field.label else f"{title} {index + 1}"
+        )
         result.append(
             NodePort(
                 node_type_id=node_type_id,
@@ -255,6 +278,7 @@ def _runtime_port_count(
         minimum_count = max(0, minimum or 0)
         return max(documented_count, minimum_count, 1 if maximum else 0)
     return max(documented_count, maximum)
+
 
 def _resolve_parameters(
     *,
@@ -376,7 +400,9 @@ def _index_runtime_parameters(
     by_id_without_hash: dict[str, list[RuntimeParameter]] = {}
     by_label: dict[str, list[RuntimeParameter]] = {}
     for parameter in parameters:
-        by_id_without_hash.setdefault(parameter.parm_id.replace("#", ""), []).append(parameter)
+        by_id_without_hash.setdefault(parameter.parm_id.replace("#", ""), []).append(
+            parameter
+        )
         by_label.setdefault(_label_key(parameter.label), []).append(parameter)
     return by_id, by_id_without_hash, by_label
 
@@ -395,7 +421,9 @@ def _resolve_parameter(
     desired_ids = manual_ids or field.explicit_ids
     if not desired_ids:
         if runtime is None:
-            return _ParameterDecision([], reason="houdini_introspection_unavailable"), []
+            return _ParameterDecision(
+                [], reason="houdini_introspection_unavailable"
+            ), []
         return _resolve_parameter_by_label(
             field,
             by_label,
@@ -452,10 +480,16 @@ def _resolve_parameter_by_label(
             if _group_matches_folder(field.group_path, candidate.folder_path)
         ]
         if len(grouped) == 1:
-            return _ParameterDecision([grouped[0].parm_id], source="houdini-folder-label"), []
+            return _ParameterDecision(
+                [grouped[0].parm_id], source="houdini-folder-label"
+            ), []
         ambiguous = grouped or candidates
-        return _ParameterDecision([], reason="ambiguous_label", missing_ids=missing_ids or []), ambiguous
-    return _ParameterDecision([], reason=no_match_reason, missing_ids=missing_ids or []), []
+        return _ParameterDecision(
+            [], reason="ambiguous_label", missing_ids=missing_ids or []
+        ), ambiguous
+    return _ParameterDecision(
+        [], reason=no_match_reason, missing_ids=missing_ids or []
+    ), []
 
 
 def _resolve_parameter_order(
@@ -471,8 +505,12 @@ def _resolve_parameter_order(
         candidates = ambiguous_candidates.get(field.ordinal)
         if not candidates:
             continue
-        lower = _nearest_runtime_ordinal(documented, decisions, runtime_parameters, field.ordinal, -1)
-        upper = _nearest_runtime_ordinal(documented, decisions, runtime_parameters, field.ordinal, 1)
+        lower = _nearest_runtime_ordinal(
+            documented, decisions, runtime_parameters, field.ordinal, -1
+        )
+        upper = _nearest_runtime_ordinal(
+            documented, decisions, runtime_parameters, field.ordinal, 1
+        )
         ordered = [
             candidate
             for candidate in candidates
@@ -547,7 +585,9 @@ def _append_parameter_resolution(
             group_path=field.group_path,
             description=field.description,
             explicit_ids=field.explicit_ids,
-            unresolved_reason=None if fully_resolved else (decision.reason or "no_houdini_match"),
+            unresolved_reason=None
+            if fully_resolved
+            else (decision.reason or "no_houdini_match"),
         )
     )
     for link_ordinal, parm_id in enumerate(decision.resolved_ids):
@@ -569,28 +609,40 @@ def _nearest_runtime_ordinal(
     ordinal: int,
     direction: int,
 ) -> int | None:
-    runtime_ordinals = {parameter.parm_id: parameter.ordinal for parameter in runtime_parameters}
+    runtime_ordinals = {
+        parameter.parm_id: parameter.ordinal for parameter in runtime_parameters
+    }
     index = ordinal + direction
     while 0 <= index < len(documented):
         decision = decisions.get(index)
         resolved_ids = decision.resolved_ids if decision is not None else []
-        ordinals = [runtime_ordinals[parm_id] for parm_id in resolved_ids if parm_id in runtime_ordinals]
+        ordinals = [
+            runtime_ordinals[parm_id]
+            for parm_id in resolved_ids
+            if parm_id in runtime_ordinals
+        ]
         if ordinals:
             return max(ordinals) if direction < 0 else min(ordinals)
         index += direction
     return None
 
 
-def _group_matches_folder(group_path: tuple[str, ...], folder_path: tuple[str, ...]) -> bool:
+def _group_matches_folder(
+    group_path: tuple[str, ...], folder_path: tuple[str, ...]
+) -> bool:
     if not group_path or not folder_path:
         return False
     group_keys = tuple(_label_key(value) for value in group_path if _label_key(value))
     folder_keys = tuple(_label_key(value) for value in folder_path if _label_key(value))
     if not group_keys or not folder_keys:
         return False
-    if len(group_keys) <= len(folder_keys) and folder_keys[-len(group_keys):] == group_keys:
+    if (
+        len(group_keys) <= len(folder_keys)
+        and folder_keys[-len(group_keys) :] == group_keys
+    ):
         return True
-    return group_keys[-1] == folder_keys[-1]
+    return False
+
 
 def _resolve_related(
     *,
@@ -647,11 +699,15 @@ def _resolve_related(
                 unresolved_reason=reason,
             )
         )
-    return rows, {
-        "related_total": len(related),
-        "related_resolved": resolved_count,
-        "related_unresolved": len(related) - resolved_count,
-    }, unresolved
+    return (
+        rows,
+        {
+            "related_total": len(related),
+            "related_resolved": resolved_count,
+            "related_unresolved": len(related) - resolved_count,
+        },
+        unresolved,
+    )
 
 
 def _parameter_override(
@@ -677,6 +733,7 @@ def _parameter_override(
         if isinstance(parm_id, str) and parm_id.strip():
             return (parm_id.strip(),)
     return ()
+
 
 def _related_override(
     overrides: list[dict[str, object]],

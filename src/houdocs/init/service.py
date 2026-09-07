@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 from houdocs.config import HouDocsConfig
@@ -43,7 +42,6 @@ class InitService:
         *,
         config: HouDocsConfig,
         progress: InitProgress | None = None,
-        confirm_rebuild: Callable[[VersionPaths], None] | None = None,
     ) -> dict[str, object]:
         progress_view = progress or InitProgress(False)
         with progress_view.phase("inspect Houdini"):
@@ -58,8 +56,6 @@ class InitService:
             paths = VersionPaths.for_version(
                 snapshot.houdini_version, data_root=self.data_root
             )
-            if paths.database.is_file() and confirm_rebuild is not None:
-                confirm_rebuild(paths)
             paths.ensure()
 
         reporter = InitReporter()

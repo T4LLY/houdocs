@@ -236,25 +236,32 @@ def test_init_summary_omits_full_issue_details() -> None:
 def test_init_existing_database_requires_explicit_y_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from houdocs.init.runtime import HoudiniInstallation, HoudiniRuntime
     from houdocs.init.service import InitService
 
-    continued = {"value": False}
+    installation_root = Path("/fake/Houdini 22.0.429")
+    installation = HoudiniInstallation(
+        root=installation_root,
+        bin_dir=installation_root / "bin",
+        houdini=installation_root / "bin" / "houdini",
+        hcommand=installation_root / "bin" / "hcommand",
+        version=(22, 0, 429),
+    )
+    monkeypatch.setattr(
+        HoudiniRuntime,
+        "select",
+        lambda self, requested_version: installation,
+    )
 
-    def fake_run(
-        self,
-        requested_version,
-        *,
-        config,
-        progress,
-        confirm_rebuild,
-    ):
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    paths.database.write_bytes(b"existing")
+
+    calls = {"run": 0}
+
+    def fake_run(self, requested_version, *, config, progress):
         del self, requested_version, config, progress
-        paths = VersionPaths.for_version("22.0.429")
-        paths.ensure()
-        paths.database.write_bytes(b"existing")
-        assert confirm_rebuild is not None
-        confirm_rebuild(paths)
-        continued["value"] = True
+        calls["run"] += 1
         return {
             "houdini_version": "22.0.429",
             "documents": {"total": 0},
@@ -267,23 +274,16 @@ def test_init_existing_database_requires_explicit_y_confirmation(
 
     monkeypatch.setattr(InitService, "run", fake_run)
 
-    rejected = runner.invoke(
-        app,
-        ["init", "--houdini-version", "22.0.429"],
-        input="n\n",
-    )
+    rejected = runner.invoke(app, ["init"], input="n\n")
     assert rejected.exit_code == 0
-    assert continued["value"] is False
+    assert calls["run"] == 0
     assert "houdini_version" not in rejected.stdout
     assert "Continue? [y/N]" in rejected.stderr
 
-    accepted = runner.invoke(
-        app,
-        ["init", "--houdini-version", "22.0.429"],
-        input="y\n",
-    )
+    accepted = runner.invoke(app, ["init"], input="y\n")
     assert accepted.exit_code == 0
-    assert continued["value"] is True
+    assert calls["run"] == 1
+    assert "Continue? [y/N]" in accepted.stderr
     payload = json.loads(accepted.stdout.splitlines()[-1])
     assert payload["houdini_version"] == "22.0.429"
 

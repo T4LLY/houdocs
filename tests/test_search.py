@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -168,7 +169,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             backend=failed_backend,
             store=store,
             embedding_profile="p1",
-        token_counter=_test_token_count,
+            token_counter=_test_token_count,
         ).index_all()
 
     assert failed_backend.entry_states("document") == {}
@@ -211,6 +212,46 @@ def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> No
         ).fetchone()
     assert mapped is not None
     assert rows[0] == 1
+
+
+def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(database=database, embeddings=FakeEmbeddings())
+    original_connect = backend._connect
+
+    class FailingConnection:
+        def __init__(self) -> None:
+            self.connection = original_connect()
+
+        def __enter__(self):
+            self.connection.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self.connection.__exit__(exc_type, exc, tb)
+
+        def execute(self, sql, parameters=()):
+            if "INSERT INTO search_entries" in sql:
+                raise sqlite3.OperationalError("forced entry write failure")
+            return self.connection.execute(sql, parameters)
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    monkeypatch.setattr(backend, "_connect", FailingConnection)
+
+    with pytest.raises(sqlite3.OperationalError, match="forced entry write failure"):
+        backend.upsert(
+            [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
+        )
+
+    with original_connect() as connection:
+        profiles = connection.execute("SELECT * FROM search_vector_profiles").fetchall()
+        entries = connection.execute("SELECT * FROM search_entries").fetchall()
+    assert profiles == []
+    assert entries == []
 
 
 def test_search_skips_stale_hits_without_aborting_current_results(
@@ -395,14 +436,26 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         **{
             **node_section.__dict__,
             "kind": "node-doc",
-            "metadata": {"kind": "node-doc", "heading_path": ["Page", "Copy to Points"]},
+            "metadata": {
+                "kind": "node-doc",
+                "heading_path": ["Page", "Copy to Points"],
+            },
         }
     )
     docs.replace_document(
-        Document("node", "Copy to Points", "nodes/sop/copytopoints.txt", "node-doc", "22.0.429", "hn"),
+        Document(
+            "node",
+            "Copy to Points",
+            "nodes/sop/copytopoints.txt",
+            "node-doc",
+            "22.0.429",
+            "hn",
+        ),
         [node_section],
     )
-    hom_text = "hou.Node\n\n::`setInput(self, input_index, node)`:\n    Connect another node."
+    hom_text = (
+        "hou.Node\n\n::`setInput(self, input_index, node)`:\n    Connect another node."
+    )
     hom_section = _section("hom", 0, "hou.Node", hom_text)
     hom_section = DocumentSection(
         **{
@@ -415,7 +468,9 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         Document("hom", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
         [hom_section],
     )
-    vex_section = _section("vex", 0, "xyzdist", "xyzdist finds the nearest surface point")
+    vex_section = _section(
+        "vex", 0, "xyzdist", "xyzdist finds the nearest surface point"
+    )
     vex_section = DocumentSection(
         **{
             **vex_section.__dict__,
@@ -424,7 +479,9 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         }
     )
     docs.replace_document(
-        Document("vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"),
+        Document(
+            "vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"
+        ),
         [vex_section],
     )
 
@@ -510,8 +567,9 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert token_counts["vex:xyzdist"] == _test_token_count(vex_section.text)
 
 
-
-def test_search_output_collapses_document_heading_metadata_to_path(tmp_path: Path) -> None:
+def test_search_output_collapses_document_heading_metadata_to_path(
+    tmp_path: Path,
+) -> None:
     docs = DocumentRepository(tmp_path / "docs.db")
     section = DocumentSection(
         section_id="doc#0",
@@ -573,7 +631,9 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
         [],
     )
     docs.replace_document(
-        Document("vex-doc", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"),
+        Document(
+            "vex-doc", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"
+        ),
         [],
     )
     hom = PythonRepository(database)
@@ -619,14 +679,23 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
         python_repository=hom,
         vex_repository=vex,
         backend=SpecializedBackend(
-            SearchHit("hom:hou.Node.setInput", "hom", "hou.Node.setInput", 1.0, {}, token_count=13)
+            SearchHit(
+                "hom:hou.Node.setInput",
+                "hom",
+                "hou.Node.setInput",
+                1.0,
+                {},
+                token_count=13,
+            )
         ),
     ).search("connect node input")
     vex_result = DocumentSearchService(
         repository=docs,
         python_repository=hom,
         vex_repository=vex,
-        backend=SpecializedBackend(SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {}, token_count=14)),
+        backend=SpecializedBackend(
+            SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {}, token_count=14)
+        ),
     ).search("nearest surface")
 
     assert hom_result["hits"][0]["path"] == ["hou.Node", "setInput"]

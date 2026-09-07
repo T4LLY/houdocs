@@ -55,16 +55,36 @@ class SQLiteVecIndex:
     ) -> None:
         if not entries:
             return
+        with self._connect() as connection:
+            self.upsert_in_transaction(connection, profile, entries, vectors_by_hash)
+            connection.commit()
+
+    def upsert_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        profile: str,
+        entries: Sequence[SearchEntry],
+        vectors_by_hash: Mapping[str, np.ndarray],
+    ) -> None:
+        if not entries:
+            return
+        load_sqlite_vec(connection)
         first = vectors_by_hash.get(entries[0].content_hash)
         if first is None:
-            raise HouDocsError("embedding_missing", "Expected embedding vector is missing.")
+            raise HouDocsError(
+                "embedding_missing", "Expected embedding vector is missing."
+            )
         dimensions = int(np.asarray(first).size)
-        table_name = self._ensure_profile(profile, dimensions)
+        table_name = self._ensure_profile_in_transaction(
+            connection, profile, dimensions
+        )
         rows: list[tuple[object, ...]] = []
         for entry in entries:
             vector = vectors_by_hash.get(entry.content_hash)
             if vector is None:
-                raise HouDocsError("embedding_missing", "Expected embedding vector is missing.")
+                raise HouDocsError(
+                    "embedding_missing", "Expected embedding vector is missing."
+                )
             normalized = np.asarray(vector, dtype=np.float32).reshape(-1)
             if len(normalized) != dimensions:
                 raise HouDocsError(
@@ -73,27 +93,36 @@ class SQLiteVecIndex:
                 )
             rows.append((entry.id, _serialize(normalized), entry.namespace))
 
-        with self._connect() as connection:
-            connection.executemany(
-                f'DELETE FROM "{table_name}" WHERE entry_id = ?',
-                [(entry.id,) for entry in entries],
-            )
-            connection.executemany(
-                f'INSERT INTO "{table_name}"(entry_id, embedding, namespace) VALUES (?, ?, ?)',
-                rows,
-            )
-            connection.commit()
+        connection.executemany(
+            f'DELETE FROM "{table_name}" WHERE entry_id = ?',
+            [(entry.id,) for entry in entries],
+        )
+        connection.executemany(
+            f'INSERT INTO "{table_name}"(entry_id, embedding, namespace) VALUES (?, ?, ?)',
+            rows,
+        )
 
     def remove(self, profile: str, entry_ids: Sequence[str]) -> None:
         if not entry_ids:
             return
-        table_name = self._table_for_profile(profile)
         with self._connect() as connection:
-            connection.executemany(
-                f'DELETE FROM "{table_name}" WHERE entry_id = ?',
-                [(entry_id,) for entry_id in entry_ids],
-            )
+            self.remove_in_transaction(connection, profile, entry_ids)
             connection.commit()
+
+    def remove_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        profile: str,
+        entry_ids: Sequence[str],
+    ) -> None:
+        if not entry_ids:
+            return
+        load_sqlite_vec(connection)
+        table_name = self._table_for_profile_in_transaction(connection, profile)
+        connection.executemany(
+            f'DELETE FROM "{table_name}" WHERE entry_id = ?',
+            [(entry_id,) for entry_id in entry_ids],
+        )
 
     def search(
         self,
@@ -127,41 +156,57 @@ class SQLiteVecIndex:
         return [str(row["entry_id"]) for row in rows]
 
     def _ensure_profile(self, profile: str, dimensions: int) -> str:
-        table_name = _table_name(profile)
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT dimensions, table_name FROM search_vector_profiles WHERE embedding_profile_id = ?",
-                (profile,),
-            ).fetchone()
-            if row is not None:
-                if int(row["dimensions"]) != dimensions:
-                    raise HouDocsError(
-                        "embedding_dimension_mismatch",
-                        f"Embedding dimensions changed for profile: {profile}",
-                    )
-                return str(row["table_name"])
-            connection.execute(
-                f"""
-                CREATE VIRTUAL TABLE IF NOT EXISTS "{table_name}" USING vec0(
-                    entry_id TEXT PRIMARY KEY,
-                    embedding FLOAT[{dimensions}] distance_metric=cosine,
-                    namespace TEXT
-                )
-                """
-            )
-            connection.execute(
-                "INSERT INTO search_vector_profiles(embedding_profile_id, dimensions, table_name) VALUES (?, ?, ?)",
-                (profile, dimensions, table_name),
+            table_name = self._ensure_profile_in_transaction(
+                connection, profile, dimensions
             )
             connection.commit()
         return table_name
 
+    def _ensure_profile_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        profile: str,
+        dimensions: int,
+    ) -> str:
+        table_name = _table_name(profile)
+        row = connection.execute(
+            "SELECT dimensions, table_name FROM search_vector_profiles WHERE embedding_profile_id = ?",
+            (profile,),
+        ).fetchone()
+        if row is not None:
+            if int(row["dimensions"]) != dimensions:
+                raise HouDocsError(
+                    "embedding_dimension_mismatch",
+                    f"Embedding dimensions changed for profile: {profile}",
+                )
+            return str(row["table_name"])
+        connection.execute(
+            f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS "{table_name}" USING vec0(
+                entry_id TEXT PRIMARY KEY,
+                embedding FLOAT[{dimensions}] distance_metric=cosine,
+                namespace TEXT
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO search_vector_profiles(embedding_profile_id, dimensions, table_name) VALUES (?, ?, ?)",
+            (profile, dimensions, table_name),
+        )
+        return table_name
+
     def _table_for_profile(self, profile: str) -> str:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT table_name FROM search_vector_profiles WHERE embedding_profile_id = ?",
-                (profile,),
-            ).fetchone()
+            return self._table_for_profile_in_transaction(connection, profile)
+
+    def _table_for_profile_in_transaction(
+        self, connection: sqlite3.Connection, profile: str
+    ) -> str:
+        row = connection.execute(
+            "SELECT table_name FROM search_vector_profiles WHERE embedding_profile_id = ?",
+            (profile,),
+        ).fetchone()
         if row is None:
             raise HouDocsError(
                 "dense_profile_missing",

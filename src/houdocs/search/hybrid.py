@@ -73,13 +73,13 @@ class HybridSearchBackend:
         grouped: dict[str, list[SearchEntry]] = {}
         for entry in entries:
             grouped.setdefault(entry.embedding_profile, []).append(entry)
+        vectors_by_profile: dict[str, dict[str, np.ndarray]] = {}
         for profile, group in grouped.items():
-            vectors = self._ensure_vector_cache(
+            vectors_by_profile[profile] = self._ensure_vector_cache(
                 profile,
                 [self._stored_from_entry(entry) for entry in group],
                 embedding_progress=embedding_progress,
             )
-            self.dense.upsert(profile, group, vectors)
 
         moved: dict[str, list[str]] = {}
         for entry in entries:
@@ -91,6 +91,18 @@ class HybridSearchBackend:
 
         fts_rowids = self._fts_rowids_for_entry_ids([entry.id for entry in entries])
         with self._connect() as connection:
+            if isinstance(self.dense, SQLiteVecIndex):
+                for profile, group in grouped.items():
+                    self.dense.upsert_in_transaction(
+                        connection, profile, group, vectors_by_profile[profile]
+                    )
+                for profile, entry_ids in moved.items():
+                    self.dense.remove_in_transaction(connection, profile, entry_ids)
+            else:
+                for profile, group in grouped.items():
+                    self.dense.upsert(profile, group, vectors_by_profile[profile])
+                for profile, entry_ids in moved.items():
+                    self.dense.remove(profile, entry_ids)
             for entry in entries:
                 metadata_json = json.dumps(
                     entry.metadata, ensure_ascii=False, sort_keys=True

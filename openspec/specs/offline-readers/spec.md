@@ -52,7 +52,10 @@ The public command SHALL be `houdocs read <page> [section] [--pick N]`. A page n
 
 #### Scenario: Read a Node type
 - **WHEN** `node_documents` contains `Sop/attribwrangle`
-- **THEN** `houdocs node Sop/attribwrangle` returns node metadata, inputs, outputs, documented parameter mappings, related links, and common page text in one response
+- **THEN** `houdocs node Sop/attribwrangle` returns only non-empty inputs, outputs, resolved operational parameters, and resolved related targets
+- **AND** port order represents port index without a repeated `index` field
+- **AND** parameter runtime metadata is flattened to `id`, `label`, `description`, `type`, and `multiparm: true` only when applicable
+- **AND** the response does not repeat node identity, document metadata, page text, null values, empty arrays, or resolution diagnostics
 
 ### Requirement: Resolve the effective initialized Houdini version without reader options
 

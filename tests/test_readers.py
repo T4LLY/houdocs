@@ -11,7 +11,14 @@ from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
 from houdocs.node.index import NodeIndexer
-from houdocs.node.models import NodeTypeDocument
+from houdocs.node.models import (
+    NodeParameter,
+    NodeParameterDoc,
+    NodeParameterLink,
+    NodePort,
+    NodeRelated,
+    NodeTypeDocument,
+)
 from houdocs.node.read import NodeReader
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
@@ -166,11 +173,179 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     assert vex["contexts"] == ["sop"]
     assert vex["group"] == "geometry"
     assert "Distance." in vex["text"]
-    assert node["parameters"][0]["ids"] == ["strength"]
-    assert (
-        node["parameters"][0]["runtime_parameters"][0]["resolution_source"]
-        == "bookish-id"
+    assert node == {
+        "parameters": [
+            {
+                "id": "strength",
+                "label": "Strength",
+                "description": "Amount.",
+                "type": "Float",
+            }
+        ]
+    }
+
+
+
+
+def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -> None:
+    database = tmp_path / "docs.db"
+    documents = DocumentRepository(database)
+    documents.replace_document(
+        Document(
+            "node-doc",
+            "Example",
+            "nodes/sop/example.txt",
+            "node-doc",
+            "22.0.429",
+            "Example body",
+        ),
+        [],
     )
+    repository = NodeRepository(database)
+    repository.replace_all(
+        [
+            (
+                NodeTypeDocument(
+                    "Sop/example",
+                    "node-doc",
+                    "sop",
+                    None,
+                    "example",
+                    None,
+                    "Sop",
+                    "Sop/example",
+                    1000,
+                    "houdini",
+                    None,
+                ),
+                (
+                    NodeParameter(
+                        "p0",
+                        "Sop/example",
+                        0,
+                        "group",
+                        "Group",
+                        ("Code",),
+                        "parmTemplateType.String",
+                        False,
+                        True,
+                    ),
+                    NodeParameter(
+                        "p1",
+                        "Sop/example",
+                        1,
+                        "bindings",
+                        "Bindings",
+                        ("Bindings",),
+                        "parmTemplateType.Folder",
+                        True,
+                        True,
+                    ),
+                ),
+                (
+                    NodeParameterDoc(
+                        "d0",
+                        "Sop/example",
+                        0,
+                        "Group",
+                        ("Code",),
+                        "Select geometry.",
+                        (),
+                        None,
+                    ),
+                    NodeParameterDoc(
+                        "d1",
+                        "Sop/example",
+                        1,
+                        "Group Bindings",
+                        ("Bindings",),
+                        "Repeated bindings.",
+                        (),
+                        None,
+                    ),
+                    NodeParameterDoc(
+                        "d2",
+                        "Sop/example",
+                        2,
+                        "Unknown",
+                        (),
+                        "Unresolved documentation.",
+                        (),
+                        "no_houdini_match",
+                    ),
+                ),
+                (
+                    NodeParameterLink("d0", "p0", 0, "houdini-label"),
+                    NodeParameterLink("d1", "p1", 0, "houdini-label"),
+                ),
+                (
+                    NodePort("Sop/example", "input", 1, "Target", "Target geometry."),
+                    NodePort("Sop/example", "input", 0, "Source", "Source geometry."),
+                    NodePort("Sop/example", "output", 0, "Output", "Result geometry."),
+                ),
+                (
+                    NodeRelated(
+                        "Sop/example",
+                        0,
+                        "node",
+                        "Node:sop/copy",
+                        None,
+                        "Sop/copy",
+                        True,
+                        None,
+                    ),
+                    NodeRelated(
+                        "Sop/example",
+                        1,
+                        "concept",
+                        "/model/copying",
+                        "Copying",
+                        "/model/copying",
+                        True,
+                        None,
+                    ),
+                    NodeRelated(
+                        "Sop/example",
+                        2,
+                        "node",
+                        "Node:sop/missing",
+                        None,
+                        None,
+                        False,
+                        "node_target_unresolved",
+                    ),
+                ),
+            )
+        ]
+    )
+
+    node = NodeReader(documents=documents, repository=repository).read("sop/example")
+
+    assert node == {
+        "inputs": [
+            {"label": "Source", "description": "Source geometry."},
+            {"label": "Target", "description": "Target geometry."},
+        ],
+        "outputs": [
+            {"label": "Output", "description": "Result geometry."},
+        ],
+        "parameters": [
+            {
+                "id": "group",
+                "label": "Group",
+                "description": "Select geometry.",
+                "type": "String",
+            },
+            {
+                "id": "bindings",
+                "label": "Group Bindings",
+                "description": "Repeated bindings.",
+                "type": "Folder",
+                "multiparm": True,
+            },
+        ],
+        "related": ["sop/copy", "/model/copying"],
+    }
 
 
 def test_node_repository_resolves_duplicate_canonical_names_by_priority(

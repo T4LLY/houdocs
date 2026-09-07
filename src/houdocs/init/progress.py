@@ -3,7 +3,8 @@ from __future__ import annotations
 import sys
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TextIO
 
 
@@ -22,6 +23,8 @@ class InitProgress:
         self.enabled = enabled and self._stream.isatty()
         self._width = 0
         self._open = False
+        self._phase_name: str | None = None
+        self._phase_started_at: float | None = None
         self._document_current = 0
         self._document_total = 0
         self._document_last_at: float | None = None
@@ -29,6 +32,39 @@ class InitProgress:
         self._embedding_batches: deque[tuple[int, float]] = deque(
             maxlen=self._RECENT_DOCUMENTS
         )
+
+    @contextmanager
+    def phase(self, name: str) -> Iterator[None]:
+        self.start_phase(name)
+        try:
+            yield
+        except BaseException:
+            self.finish()
+            self._phase_name = None
+            self._phase_started_at = None
+            raise
+        else:
+            self.complete_phase()
+
+    def start_phase(self, name: str) -> None:
+        if not self.enabled:
+            return
+        if self._phase_started_at is not None:
+            raise RuntimeError("Initialization progress phase already active.")
+        self._phase_name = name
+        self._phase_started_at = self._clock()
+        self.show(f"          RUN   {name}")
+
+    def complete_phase(self) -> None:
+        if not self.enabled or self._phase_started_at is None or self._phase_name is None:
+            return
+        elapsed = max(0.0, self._clock() - self._phase_started_at)
+        name = self._phase_name
+        self._clear_line()
+        self._stream.write(f"[{elapsed / 60.0:5.1f}m] DONE  {name}\n")
+        self._stream.flush()
+        self._phase_name = None
+        self._phase_started_at = None
 
     def show(self, message: str) -> None:
         if not self.enabled:
@@ -119,11 +155,19 @@ class InitProgress:
         remaining = self._document_total - self._document_current
         return average * remaining
 
+    def _clear_line(self) -> None:
+        if not self._open:
+            return
+        self._stream.write(f"\r{' ' * self._width}\r")
+        self._width = 0
+        self._open = False
+
     def finish(self) -> None:
         if not self.enabled or not self._open:
             return
         self._stream.write("\n")
         self._stream.flush()
+        self._width = 0
         self._open = False
 
 

@@ -115,3 +115,38 @@ def test_embedding_eta_uses_recent_30_batches_weighted_by_section_count() -> Non
 
     assert "Embedding search sections: 320/1000 (32%) uncached" in stream.getvalue()
     assert "ETA 1m 12s" in stream.getvalue()
+
+
+def test_init_progress_keeps_completed_phases_with_elapsed_minutes() -> None:
+    stream = _TtyBuffer()
+    now = [0.0]
+    progress = InitProgress(True, stream=stream, clock=lambda: now[0])
+
+    with progress.phase("inspect Houdini"):
+        now[0] = 24.0
+    with progress.phase("index documents"):
+        progress.indexing(0, 10)
+        now[0] = 72.0
+        progress.indexing(10, 10)
+
+    output = stream.getvalue()
+    first = "[  0.4m] DONE  inspect Houdini"
+    second = "[  0.8m] DONE  index documents"
+    assert first in output
+    assert second in output
+    assert output.index(first) < output.index(second)
+    assert "DONE  inspect Houdini | ETA" not in output
+    assert "DONE  index documents | ETA" not in output
+
+
+def test_init_progress_phase_failure_is_not_marked_done() -> None:
+    stream = _TtyBuffer()
+    progress = InitProgress(True, stream=stream)
+
+    try:
+        with progress.phase("index documents"):
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+
+    assert "DONE  index documents" not in stream.getvalue()

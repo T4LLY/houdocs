@@ -134,13 +134,11 @@ def test_init_summary_omits_full_issue_details() -> None:
     assert summary == {
         "houdini_version": "22.0.429",
         "documents": 11731,
-        "sections": 40213,
         "node_documents": 4846,
         "python_symbols": 35,
         "vex_functions": 932,
         "search_entries": 40213,
         "warnings": 3895,
         "errors": 2,
-        "report": "C:/houdocs/reports/init-report.json",
     }
     assert "issues" not in summary

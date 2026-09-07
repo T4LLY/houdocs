@@ -8,7 +8,7 @@ Provide optional interactive progress for the long-running `houdocs init` workfl
 
 ### Requirement: Progress is opt-in and TTY-only
 
-`houdocs init` SHALL expose `--progress`. When enabled on an interactive TTY, initialization progress SHALL be written to stderr using a single updating line. Normal final JSON SHALL remain on stdout. When stderr is not a TTY, progress output SHALL remain silent.
+`houdocs init` SHALL expose `--progress`. When enabled on an interactive TTY, initialization progress SHALL be written to stderr. The currently running phase MAY update in place, while every completed major phase SHALL remain visible as its own line with measured elapsed minutes and `DONE`. Normal final JSON SHALL remain on stdout. When stderr is not a TTY, progress output SHALL remain silent.
 
 #### Scenario: Interactive initialization
 - **WHEN** the caller runs `houdocs init --progress` with stderr attached to a TTY
@@ -21,11 +21,17 @@ Provide optional interactive progress for the long-running `houdocs init` workfl
 
 ### Requirement: Initialization stages remain visible
 
-Interactive progress SHALL identify the major long-running initialization stages, including Houdini discovery/runtime inspection, Help acquisition/indexing, specialist indexes, and search-index construction.
+Interactive progress SHALL identify the major long-running initialization stages, including Houdini discovery/runtime inspection, Help acquisition/indexing, specialist indexes, and search-index construction. Once a major phase completes, its line SHALL remain visible and SHALL show the measured duration in minutes followed by `DONE`; a completed phase SHALL NOT be shown as an ETA.
 
 #### Scenario: Houdini has launched and runtime inspection is still running
 - **WHEN** initialization is waiting for the runtime probe to complete
 - **THEN** the current progress line identifies Houdini startup/runtime inspection rather than leaving the terminal without status
+
+#### Scenario: A major phase completes
+- **WHEN** a major initialization phase finishes
+- **THEN** a persistent line records its measured duration in minutes and `DONE`
+- **AND** that completed line remains visible while later phases run
+- **AND** the completed line does not display ETA
 
 ### Requirement: Document ETA uses the most recent thirty completions
 

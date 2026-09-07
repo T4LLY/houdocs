@@ -353,6 +353,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
         json.dumps(unresolved, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    assist_report_before = unresolved_path.read_bytes()
     (paths.reports / "houdini-node-types-22.0.429.json").write_text(
         json.dumps(
             {
@@ -378,6 +379,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
 
     assert result.exit_code == 0
     assert result.stdout == "Imported 1 assist overrides.\n"
+    assert unresolved_path.read_bytes() == assist_report_before
     assert paths.search_database.read_bytes() == b"search-index-sentinel"
     assert NodeReader(
         documents=DocumentRepository(paths.database),
@@ -392,3 +394,108 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
             }
         ]
     }
+
+
+def test_init_confirmation_also_guards_existing_search_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from houdocs.init.runtime import HoudiniInstallation, HoudiniRuntime
+    from houdocs.init.service import InitService
+
+    installation_root = Path("/fake/Houdini 22.0.429")
+    installation = HoudiniInstallation(
+        root=installation_root,
+        bin_dir=installation_root / "bin",
+        houdini=installation_root / "bin" / "houdini",
+        hcommand=installation_root / "bin" / "hcommand",
+        version=(22, 0, 429),
+    )
+    monkeypatch.setattr(
+        HoudiniRuntime,
+        "select",
+        lambda self, requested_version: installation,
+    )
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    paths.search_database.write_bytes(b"existing-search")
+
+    calls = {"run": 0}
+
+    def fake_run(self, requested_version, *, config, progress):
+        del self, requested_version, config, progress
+        calls["run"] += 1
+        return {}
+
+    monkeypatch.setattr(InitService, "run", fake_run)
+
+    result = runner.invoke(app, ["init"], input="\n")
+
+    assert result.exit_code == 0
+    assert calls["run"] == 0
+    assert "Continue? [y/N]" in result.stderr
+    assert paths.search_database.read_bytes() == b"existing-search"
+
+
+def test_init_import_assist_failure_preserves_report_and_node_metadata(tmp_path: Path) -> None:
+    from houdocs.docs.bookish import BookishDocumentParser
+    from houdocs.docs.index import DocumentIndexer
+    from houdocs.init.service import InitService
+    from houdocs.node.index import NodeIndexer
+    from houdocs.node.repository import NodeRepository
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    source = tmp_path / "help"
+    node_source = source / "nodes" / "sop" / "example.txt"
+    node_source.parent.mkdir(parents=True)
+    node_source.write_text(
+        "#type: node\n#context: sop\n#internal: example\n= Example =\n\n"
+        "@parameters\nLegacy Label:\n    Documentation.\n",
+        encoding="utf-8",
+    )
+
+    documents = DocumentRepository(paths.database)
+    DocumentIndexer(
+        repository=documents,
+        parser=BookishDocumentParser(),
+        cache_directory=paths.docs,
+        token_counter=len,
+    ).index_all(source, houdini_version="22.0.429")
+    runtime_rows = (
+        {
+            "category": "Sop",
+            "name": "example",
+            "canonical_name": "Sop/example",
+            "parameters": [],
+        },
+    )
+    NodeIndexer(
+        documents=documents,
+        repository=NodeRepository(paths.database),
+        docs_directory=paths.docs,
+        report_directory=paths.reports,
+    ).index_all(runtime_rows, houdini_version="22.0.429")
+
+    unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
+    report_before = unresolved_path.read_bytes()
+    (paths.reports / "houdini-node-types-22.0.429.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "houdini_version": "22.0.429",
+                "node_types": list(runtime_rows),
+            }
+        ),
+        encoding="utf-8",
+    )
+    cached = paths.docs / "nodes" / "sop" / "example.txt"
+    cached.unlink()
+    before_count = NodeRepository(paths.database).count()
+
+    with pytest.raises(Exception) as raised:
+        InitService().import_assist("22.0.429")
+
+    assert getattr(raised.value, "error", None).code == "node_index_incomplete"
+    assert unresolved_path.read_bytes() == report_before
+    assert NodeRepository(paths.database).count() == before_count

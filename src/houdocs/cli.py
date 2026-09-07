@@ -154,7 +154,7 @@ def init_command(
         paths = VersionPaths.for_version(
             installation.version_string, data_root=service.data_root
         )
-        if paths.database.is_file():
+        if paths.database.is_file() or paths.search_database.is_file():
             progress_view.finish()
             if not typer.confirm(
                 f"Existing HouDocs database for Houdini {paths.version} will be rebuilt. Continue?",

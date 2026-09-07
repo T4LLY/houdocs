@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from houdocs.docs.models import Document
+from houdocs.errors import HouDocsError
 from houdocs.docs.repository import DocumentRepository
 from houdocs.node.models import RuntimeNodeType, RuntimeParameter
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
@@ -35,10 +36,13 @@ class NodeIndexer:
         houdini_version: str,
         on_warning: IssueCallback | None = None,
         on_error: IssueCallback | None = None,
+        overrides: dict[str, list[dict[str, object]]] | None = None,
+        write_report: bool = True,
+        fail_on_error: bool = False,
     ) -> dict[str, int | str]:
         catalog = NodeTypeCatalog(_runtime_node_types(runtime_rows))
         unresolved_file = unresolved_path(self.report_directory, houdini_version)
-        overrides = load_overrides(unresolved_file)
+        active_overrides = overrides if overrides is not None else load_overrides(unresolved_file)
         records: list[NodeRecord] = []
         unresolved: dict[str, list[dict[str, object]]] = {
             "node_types": [],
@@ -68,6 +72,11 @@ class NodeIndexer:
             source = self._read_source(document, on_error)
             if source is None:
                 counts["failed"] += 1
+                if fail_on_error:
+                    raise HouDocsError(
+                        "node_index_incomplete",
+                        f"Unable to read node documentation during assist import: {document.relative_path}",
+                    )
                 continue
             try:
                 node_doc = parse_node_document(source, document.relative_path)
@@ -78,10 +87,16 @@ class NodeIndexer:
                     relative_path=document.relative_path,
                     node_doc=node_doc,
                     catalog=catalog,
-                    overrides=overrides,
+                    overrides=active_overrides,
                 )
             except Exception as exc:
                 counts["failed"] += 1
+                if fail_on_error:
+                    raise HouDocsError(
+                        "node_index_incomplete",
+                        f"Unable to parse node documentation during assist import: {document.relative_path}",
+                        detail=f"{type(exc).__name__}: {exc}",
+                    ) from exc
                 _issue(
                     on_error,
                     "node_document_parse_error",
@@ -100,12 +115,13 @@ class NodeIndexer:
                 unresolved[key].extend(missing[key])
 
         self.repository.replace_all(records)
-        write_unresolved(
-            unresolved_file,
-            houdini_version=houdini_version,
-            overrides=overrides,
-            unresolved=unresolved,
-        )
+        if write_report:
+            write_unresolved(
+                unresolved_file,
+                houdini_version=houdini_version,
+                overrides=active_overrides,
+                unresolved=unresolved,
+            )
         self._report_unresolved(unresolved, on_warning)
         return {**counts, "unresolved_file": str(unresolved_file)}
 

@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from houdocs.errors import HouDocsError
+
 _FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -17,15 +19,42 @@ def load_overrides(path: Path) -> dict[str, list[dict[str, object]]]:
         return {"parameters": [], "related": []}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"parameters": [], "related": []}
-    overrides = payload.get("overrides") if isinstance(payload, dict) else None
+    except OSError as exc:
+        raise HouDocsError(
+            "node_assist_invalid",
+            f"Unable to read node assist report: {path}",
+            detail=str(exc),
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise HouDocsError(
+            "node_assist_invalid",
+            f"Node assist report is invalid JSON: {path}",
+            detail=str(exc),
+        ) from exc
+
+    if not isinstance(payload, dict) or payload.get("schema_version") != 2:
+        raise HouDocsError(
+            "node_assist_invalid",
+            f"Node assist report has an unsupported schema: {path}",
+        )
+
+    overrides = payload.get("overrides")
     if not isinstance(overrides, dict):
-        return {"parameters": [], "related": []}
-    return {
-        "parameters": [item for item in overrides.get("parameters", []) if isinstance(item, dict)],
-        "related": [item for item in overrides.get("related", []) if isinstance(item, dict)],
-    }
+        raise HouDocsError(
+            "node_assist_invalid",
+            f"Node assist report is missing overrides: {path}",
+        )
+
+    result: dict[str, list[dict[str, object]]] = {}
+    for key in ("parameters", "related"):
+        rows = overrides.get(key)
+        if not isinstance(rows, list) or any(not isinstance(item, dict) for item in rows):
+            raise HouDocsError(
+                "node_assist_invalid",
+                f"Node assist report has invalid overrides.{key}: {path}",
+            )
+        result[key] = list(rows)
+    return result
 
 
 def write_unresolved(

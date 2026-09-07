@@ -12,11 +12,13 @@ from houdocs.search.domain import ALL_SEARCH_NAMESPACES, SearchDomain, namespace
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.models import SearchEntry
 from houdocs.search.store import SearchStore
+from houdocs.search.tokens import count_openai_tokens
 from houdocs.vex_docs.repository import VexRepository
 
 
 SEARCH_SCHEMA_VERSION = "2"
 EmbeddingProgress = Callable[[int, int, int, float], None]
+TokenCounter = Callable[[str], int]
 
 
 class SearchIndexer:
@@ -29,6 +31,7 @@ class SearchIndexer:
         vex_documents: VexRepository | None = None,
         store: SearchStore,
         embedding_profile: str,
+        token_counter: TokenCounter = count_openai_tokens,
     ) -> None:
         self.documents = documents
         self.python_documents = python_documents or PythonRepository(documents.database)
@@ -36,6 +39,7 @@ class SearchIndexer:
         self.backend = backend
         self.store = store
         self.embedding_profile = embedding_profile
+        self.token_counter = token_counter
 
     def index_all(
         self,
@@ -113,7 +117,7 @@ class SearchIndexer:
                     content=section.text,
                     content_hash=section.content_hash,
                     embedding_profile=self.embedding_profile,
-                    token_count=section.token_count,
+                    token_count=self.token_counter(section.text),
                     metadata=dict(section.metadata),
                 )
             )
@@ -155,6 +159,7 @@ class SearchIndexer:
                     content=content,
                     content_hash=_content_hash(content),
                     embedding_profile=self.embedding_profile,
+                    token_count=self.token_counter(text),
                     metadata={
                         "document_id": record.document_id,
                         "symbol": record.symbol,
@@ -189,6 +194,7 @@ class SearchIndexer:
                     content=content,
                     content_hash=_content_hash(content),
                     embedding_profile=self.embedding_profile,
+                    token_count=self.token_counter(text),
                     metadata={
                         "document_id": record.document_id,
                         "function": record.function_name,

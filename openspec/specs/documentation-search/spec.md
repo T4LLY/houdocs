@@ -48,13 +48,27 @@ The public command SHALL be `houdocs search <query> [--domain node|vex|hom|docum
 
 ### Requirement: Search results expose only compact navigation metadata
 
-The top-level search result SHALL contain only `hits`. Each hit SHALL return `path`, `kind`, and `score`. `path` SHALL combine the document title and heading hierarchy without repeating an identical adjacent title. Search SHALL NOT return the query, section body text, internal section IDs, source paths, anchors, or duplicated heading fields.
+The top-level search result SHALL contain only `hits`. Each hit SHALL return `path`, `kind`, `score`, and `tokens`. `path` SHALL combine the document title and heading hierarchy without repeating an identical adjacent title. Search SHALL NOT return the query, section body text, internal section IDs, source paths, anchors, or duplicated heading fields.
 
 #### Scenario: Return one search hit
 - **WHEN** a documentation section matches the query
-- **THEN** the hit contains only `path`, `kind`, and `score`
+- **THEN** the hit contains only `path`, `kind`, `score`, and `tokens`
 - **AND** `path` preserves the document and heading hierarchy without duplicated adjacent titles
 - **AND** the response contains no `query`, `text`, `section_id`, `relative_path`, `anchor`, `document`, `heading`, or `heading_path` field
+
+### Requirement: Search results expose OpenAI token cost
+
+Each search entry SHALL store the token count of the text returned when that entry is read. Token counts SHALL use OpenAI `o200k_base` tokenization and SHALL be computed during search indexing, not during each search request.
+
+#### Scenario: Index a searchable unit
+- **WHEN** a document section, HOM symbol, or VEX function is added to the search index
+- **THEN** HouDocs computes its readable text token count with `o200k_base`
+- **AND** stores that count in the search entry
+
+#### Scenario: Return one search hit
+- **WHEN** a stored search entry matches a query
+- **THEN** the hit returns the stored count as `tokens`
+- **AND** the search request does not tokenize the article again
 
 ### Requirement: Bound SQLite lookup parameter counts
 

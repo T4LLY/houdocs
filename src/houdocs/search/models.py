@@ -24,6 +24,7 @@ class SearchHit:
     source_id: str
     score: float
     metadata: dict[str, object]
+    token_count: int | None = None
     lexical_rank: int | None = None
     dense_rank: int | None = None
 
@@ -34,6 +35,7 @@ class SearchHit:
             "source_id": self.source_id,
             "score": normalize_rrf_score(self.score),
             "metadata": self.metadata,
+            "token_count": self.token_count,
             "lexical_rank": self.lexical_rank,
             "dense_rank": self.dense_rank,
         }

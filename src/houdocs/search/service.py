@@ -10,6 +10,15 @@ from houdocs.search.rrf import normalize_rrf_score
 from houdocs.vex_docs.repository import VexRepository
 
 
+def _token_count(hit: SearchHit) -> int:
+    if hit.token_count is None:
+        raise HouDocsError(
+            "search_token_count_missing",
+            "Search index is missing token counts. Reinitialize HouDocs.",
+        )
+    return hit.token_count
+
+
 def _search_path(document: str, heading_path: tuple[str, ...] | list[str]) -> list[str]:
     path = [document]
     for heading in heading_path:
@@ -73,6 +82,7 @@ class DocumentSearchService:
             "path": _search_path(document.title, section.heading_path),
             "kind": section.kind,
             "score": normalize_rrf_score(hit.score),
+            "tokens": _token_count(hit),
         }
 
     def _hom_hit(self, hit: SearchHit) -> dict[str, object] | None:
@@ -94,6 +104,7 @@ class DocumentSearchService:
             "path": _search_path(document.title, heading_path),
             "kind": document.kind,
             "score": normalize_rrf_score(hit.score),
+            "tokens": _token_count(hit),
         }
 
     def _vex_hit(self, hit: SearchHit) -> dict[str, object] | None:
@@ -110,4 +121,5 @@ class DocumentSearchService:
             "path": _search_path(document.title, [record.function_name]),
             "kind": document.kind,
             "score": normalize_rrf_score(hit.score),
+            "tokens": _token_count(hit),
         }

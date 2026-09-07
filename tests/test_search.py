@@ -15,6 +15,10 @@ from houdocs.search.service import DocumentSearchService
 from houdocs.search.store import SearchStore
 
 
+def _test_token_count(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
 class FakeEmbeddings:
     def encode(self, texts, profile):
         return np.asarray([[float(len(text)), 1.0] for text in texts], dtype=np.float32)
@@ -87,6 +91,7 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
         backend=backend,
         store=SearchStore(tmp_path / "search.db"),
         embedding_profile="test-profile",
+        token_counter=_test_token_count,
     ).index_all()
 
     assert result == {"entries": 2, "indexed": 2, "skipped": 0, "removed": 0}
@@ -94,7 +99,8 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
     assert set(payload) == {"hits"}
     assert payload["hits"][0]["path"] == ["Page", "Alpha"]
     assert "text" not in payload["hits"][0]
-    assert set(payload["hits"][0]) == {"path", "kind", "score"}
+    assert set(payload["hits"][0]) == {"path", "kind", "score", "tokens"}
+    assert payload["hits"][0]["tokens"] == _test_token_count("alpha geometry")
 
 
 def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
@@ -111,13 +117,25 @@ def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
     store = SearchStore(tmp_path / "search.db")
 
     first = SearchIndexer(
-        documents=docs, backend=backend, store=store, embedding_profile="p1"
+        documents=docs,
+        backend=backend,
+        store=store,
+        embedding_profile="p1",
+        token_counter=_test_token_count,
     ).index_all()
     second = SearchIndexer(
-        documents=docs, backend=backend, store=store, embedding_profile="p1"
+        documents=docs,
+        backend=backend,
+        store=store,
+        embedding_profile="p1",
+        token_counter=_test_token_count,
     ).index_all()
     third = SearchIndexer(
-        documents=docs, backend=backend, store=store, embedding_profile="p2"
+        documents=docs,
+        backend=backend,
+        store=store,
+        embedding_profile="p2",
+        token_counter=_test_token_count,
     ).index_all()
 
     assert first["indexed"] == 1
@@ -150,6 +168,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             backend=failed_backend,
             store=store,
             embedding_profile="p1",
+        token_counter=_test_token_count,
         ).index_all()
 
     assert failed_backend.entry_states("document") == {}
@@ -164,6 +183,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
         ),
         store=store,
         embedding_profile="p1",
+        token_counter=_test_token_count,
     ).index_all()
 
     assert retry["indexed"] == 1
@@ -200,8 +220,8 @@ def test_search_skips_stale_hits_without_aborting_current_results(
         def search(self, query, *, namespaces, top_k):
             del query, namespaces, top_k
             return [
-                SearchHit("stale", "document", "missing", 1.0, {}),
-                SearchHit("current", "document", "doc#0", 0.5, {}),
+                SearchHit("stale", "document", "missing", 1.0, {}, token_count=5),
+                SearchHit("current", "document", "doc#0", 0.5, {}, token_count=10),
             ]
 
     docs = DocumentRepository(tmp_path / "docs.db")
@@ -241,6 +261,7 @@ def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -
         backend=backend,
         store=store,
         embedding_profile="p1",
+        token_counter=_test_token_count,
     )
     indexer.index_all(embedding_progress=lambda *values: first_progress.append(values))
     indexer.index_all(embedding_progress=lambda *values: second_progress.append(values))
@@ -290,6 +311,7 @@ def test_search_index_embeds_changed_sections_per_document(tmp_path: Path) -> No
         backend=backend,
         store=SearchStore(tmp_path / "search.db"),
         embedding_profile="p1",
+        token_counter=_test_token_count,
     ).index_all()
 
     assert embeddings.batch_sizes == [2, 2]
@@ -458,6 +480,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         backend=backend,
         store=SearchStore(tmp_path / "search.db"),
         embedding_profile="p1",
+        token_counter=_test_token_count,
     ).index_all()
 
     assert result["entries"] == 5
@@ -471,9 +494,20 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
             "SELECT content FROM search_content WHERE entry_id = ?",
             ("hom:hou.Node.setInput",),
         ).fetchone()
+        token_rows = connection.execute(
+            "SELECT entry_id, token_count FROM search_entries ORDER BY entry_id"
+        ).fetchall()
     assert hom_member is not None
     assert "hou.Node.setInput" in hom_member["content"]
     assert "Connect another node." in hom_member["content"]
+    token_counts = {str(row["entry_id"]): int(row["token_count"]) for row in token_rows}
+    assert token_counts["document:concept#0"] == _test_token_count("general documentation")
+    assert token_counts["node:node#0"] == _test_token_count("copy geometry to points")
+    assert token_counts["hom:hou.Node"] == _test_token_count(hom_text)
+    assert token_counts["hom:hou.Node.setInput"] == _test_token_count(
+        "::`setInput(self, input_index, node)`:\n    Connect another node."
+    )
+    assert token_counts["vex:xyzdist"] == _test_token_count(vex_section.text)
 
 
 
@@ -508,7 +542,7 @@ def test_search_output_collapses_document_heading_metadata_to_path(tmp_path: Pat
     class OneHitBackend:
         def search(self, query, *, namespaces, top_k):
             del query, namespaces, top_k
-            return [SearchHit("node:doc#0", "node", "doc#0", 1.0, {})]
+            return [SearchHit("node:doc#0", "node", "doc#0", 1.0, {}, token_count=12)]
 
     result = DocumentSearchService(repository=docs, backend=OneHitBackend()).search(
         "copy to points"
@@ -520,6 +554,7 @@ def test_search_output_collapses_document_heading_metadata_to_path(tmp_path: Pat
                 "path": ["Copy to Points", "Inputs"],
                 "kind": "node-doc",
                 "score": 10000.0,
+                "tokens": 12,
             }
         ]
     }
@@ -584,20 +619,22 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
         python_repository=hom,
         vex_repository=vex,
         backend=SpecializedBackend(
-            SearchHit("hom:hou.Node.setInput", "hom", "hou.Node.setInput", 1.0, {})
+            SearchHit("hom:hou.Node.setInput", "hom", "hou.Node.setInput", 1.0, {}, token_count=13)
         ),
     ).search("connect node input")
     vex_result = DocumentSearchService(
         repository=docs,
         python_repository=hom,
         vex_repository=vex,
-        backend=SpecializedBackend(SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {})),
+        backend=SpecializedBackend(SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {}, token_count=14)),
     ).search("nearest surface")
 
     assert hom_result["hits"][0]["path"] == ["hou.Node", "setInput"]
     assert hom_result["hits"][0]["kind"] == "hom"
+    assert hom_result["hits"][0]["tokens"] == 13
     assert vex_result["hits"][0]["path"] == ["xyzdist"]
     assert vex_result["hits"][0]["kind"] == "vex"
+    assert vex_result["hits"][0]["tokens"] == 14
 
 
 def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> None:

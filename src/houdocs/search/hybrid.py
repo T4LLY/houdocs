@@ -30,6 +30,7 @@ class _StoredEntry:
     content: str
     content_hash: str
     embedding_profile: str
+    token_count: int | None
     metadata: dict[str, object]
 
 
@@ -273,6 +274,7 @@ class HybridSearchBackend:
                 source_id=by_id[entry_id].source_id,
                 score=scores[entry_id],
                 metadata=by_id[entry_id].metadata,
+                token_count=by_id[entry_id].token_count,
                 lexical_rank=lexical_ranks.get(entry_id),
                 dense_rank=dense_ranks.get(entry_id),
             )
@@ -454,6 +456,7 @@ class HybridSearchBackend:
             content=entry.content,
             content_hash=entry.content_hash,
             embedding_profile=entry.embedding_profile,
+            token_count=entry.token_count,
             metadata=dict(entry.metadata),
         )
 
@@ -466,5 +469,8 @@ class HybridSearchBackend:
             content=str(row["content"]),
             content_hash=str(row["content_hash"]),
             embedding_profile=str(row["embedding_profile_id"]),
+            token_count=(
+                int(row["token_count"]) if row["token_count"] is not None else None
+            ),
             metadata=json.loads(row["metadata_json"] or "{}"),
         )

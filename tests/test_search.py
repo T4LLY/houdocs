@@ -100,7 +100,7 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
     assert payload["hits"][0]["path"] == ["Page", "Alpha"]
     assert "text" not in payload["hits"][0]
     assert set(payload["hits"][0]) == {"path", "kind", "score", "tokens"}
-    assert payload["hits"][0]["tokens"] == _test_token_count("alpha geometry")
+    assert payload["hits"][0]["tokens"] == 10
 
 
 def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
@@ -501,8 +501,8 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert "hou.Node.setInput" in hom_member["content"]
     assert "Connect another node." in hom_member["content"]
     token_counts = {str(row["entry_id"]): int(row["token_count"]) for row in token_rows}
-    assert token_counts["document:concept#0"] == _test_token_count("general documentation")
-    assert token_counts["node:node#0"] == _test_token_count("copy geometry to points")
+    assert token_counts["document:concept#0"] == 10
+    assert token_counts["node:node#0"] == 10
     assert token_counts["hom:hou.Node"] == _test_token_count(hom_text)
     assert token_counts["hom:hou.Node.setInput"] == _test_token_count(
         "setInput(self, input_index, node)\n    Connect another node."

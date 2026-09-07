@@ -41,7 +41,7 @@ def test_cli_exposes_only_the_planned_top_level_commands() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("init", "search", "read", "node", "hom", "vex"):
+    for command in ("init", "search", "read", "sections", "node", "hom", "vex"):
         assert command in result.stdout
     assert "python" not in result.stdout
 
@@ -109,6 +109,7 @@ def test_ambiguous_read_error_emits_native_choices(tmp_path: Path) -> None:
         repository=repository,
         parser=BookishDocumentParser(),
         cache_directory=paths.docs,
+        token_counter=len,
     ).index_all(source, houdini_version="22.0.429")
 
     result = runner.invoke(app, ["read", "Copy to Points"])
@@ -123,9 +124,50 @@ def test_ambiguous_read_error_emits_native_choices(tmp_path: Path) -> None:
     }
 
 
+def test_sections_command_lists_paths_tokens_and_supports_pick(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    (source / "nodes" / "lop").mkdir(parents=True)
+    (source / "nodes" / "sop").mkdir(parents=True)
+    (source / "nodes" / "lop" / "same.txt").write_text(
+        "= Same =\n\nLOP.\n\n== Details ==\n\nLOP details.\n",
+        encoding="utf-8",
+    )
+    (source / "nodes" / "sop" / "same.txt").write_text(
+        "= Same =\n\nSOP.\n\n== Details ==\n\nSOP details.\n",
+        encoding="utf-8",
+    )
+
+    from houdocs.docs.bookish import BookishDocumentParser
+    from houdocs.docs.index import DocumentIndexer
+    from houdocs.paths import VersionPaths
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    DocumentIndexer(
+        repository=DocumentRepository(paths.database),
+        parser=BookishDocumentParser(),
+        cache_directory=paths.docs,
+        token_counter=len,
+    ).index_all(source, houdini_version="22.0.429")
+
+    ambiguous = runner.invoke(app, ["sections", "Same"])
+    assert ambiguous.exit_code == 1
+    assert json.loads(ambiguous.stdout)["choices"] == ["LOP / Same", "SOP / Same"]
+
+    selected = runner.invoke(app, ["sections", "Same", "--pick", "2"])
+    assert selected.exit_code == 0
+    payload = json.loads(selected.stdout)
+    assert [item["path"] for item in payload["sections"]] == [
+        ["Same"],
+        ["Details"],
+    ]
+    assert all(isinstance(item["tokens"], int) for item in payload["sections"])
+
+
 def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     search = runner.invoke(app, ["search", "--help"])
     read = runner.invoke(app, ["read", "--help"])
+    sections = runner.invoke(app, ["sections", "--help"])
     node = runner.invoke(app, ["node", "--help"])
     hom = runner.invoke(app, ["hom", "--help"])
     vex = runner.invoke(app, ["vex", "--help"])
@@ -133,6 +175,7 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     assert (
         search.exit_code
         == read.exit_code
+        == sections.exit_code
         == node.exit_code
         == hom.exit_code
         == vex.exit_code
@@ -146,7 +189,15 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     assert "document" in search.stdout
     assert "PAGE" in read.stdout and "[SECTION]" in read.stdout
     assert "--pick" in read.stdout
-    for output in (search.stdout, read.stdout, node.stdout, hom.stdout, vex.stdout):
+    assert "PAGE" in sections.stdout and "--pick" in sections.stdout
+    for output in (
+        search.stdout,
+        read.stdout,
+        sections.stdout,
+        node.stdout,
+        hom.stdout,
+        vex.stdout,
+    ):
         assert "--houdini-version" not in output
         assert "--top-k" not in output
         assert "--rebuild" not in output

@@ -144,8 +144,10 @@ class DocumentRepository:
                 )
                 connection.executemany(
                     """
-                    INSERT INTO sections(id, document_id, ordinal, anchor, heading, level, text)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO sections(
+                        id, document_id, ordinal, anchor, heading, level, token_count, text
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -155,6 +157,7 @@ class DocumentRepository:
                             section.anchor,
                             section.heading,
                             section.heading_level,
+                            section.token_count,
                             section.text,
                         )
                         for section in sections
@@ -233,15 +236,9 @@ def _sections_from_rows(
                 heading_level=level,
                 kind=kind,
                 content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                token_count=_estimate_tokens(text),
+                token_count=int(row["token_count"]),
                 text=text,
                 metadata=metadata,
             )
         )
     return sections
-
-
-def _estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return max(1, (len(text.encode("utf-8")) + 2) // 3)

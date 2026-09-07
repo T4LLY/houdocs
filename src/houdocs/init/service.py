@@ -21,6 +21,7 @@ from houdocs.search.embedding import Model2VecEmbeddingProvider
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
 from houdocs.search.store import SearchStore
+from houdocs.search.tokens import count_openai_tokens
 
 
 class InitService:
@@ -66,6 +67,7 @@ class InitService:
             repository=repository,
             parser=BookishDocumentParser(),
             cache_directory=paths.docs,
+            token_counter=count_openai_tokens,
         )
         with progress_view.phase("index documents"):
             documents = indexer.index_all(

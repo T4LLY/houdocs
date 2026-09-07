@@ -117,6 +117,7 @@ def test_document_indexer_is_incremental_and_removes_stale_documents(
         repository=repository,
         parser=BookishDocumentParser(),
         cache_directory=tmp_path / "cache",
+        token_counter=len,
     )
 
     first = indexer.index_all(source, houdini_version="22.0.429")
@@ -147,6 +148,7 @@ def test_parse_failure_is_reported_and_does_not_leave_old_body(tmp_path: Path) -
         repository=repository,
         parser=BookishDocumentParser(),
         cache_directory=tmp_path / "cache",
+        token_counter=len,
     )
     good.index_all(source, houdini_version="22.0.429")
     document_path.write_text("changed", encoding="utf-8")
@@ -155,6 +157,7 @@ def test_parse_failure_is_reported_and_does_not_leave_old_body(tmp_path: Path) -
         repository=repository,
         parser=FailingParser(),
         cache_directory=tmp_path / "cache",
+        token_counter=len,
     )
 
     result = failing.index_all(
@@ -178,7 +181,40 @@ def test_docs_database_contains_documents_and_sections_schema(tmp_path: Path) ->
                 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
             )
         }
+        section_columns = {
+            row[1]: row
+            for row in connection.execute("PRAGMA table_info(sections)")
+        }
     assert {"documents", "sections"}.issubset(tables)
+    assert "token_count" in section_columns
+    assert section_columns["token_count"][3] == 1
+
+
+def test_document_indexer_persists_injected_token_count(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text(
+        "= Page =\n\nIntro.\n\n== Details ==\n\nMore.\n",
+        encoding="utf-8",
+    )
+    repository = DocumentRepository(tmp_path / "docs.db")
+    seen: list[str] = []
+
+    def count_tokens(text: str) -> int:
+        seen.append(text)
+        return 1000 + len(seen)
+
+    DocumentIndexer(
+        repository=repository,
+        parser=BookishDocumentParser(),
+        cache_directory=tmp_path / "cache",
+        token_counter=count_tokens,
+    ).index_all(source)
+
+    document = repository.documents_for_title("Page")[0]
+    sections = repository.sections_for_document(document.document_id)
+    assert [section.token_count for section in sections] == [1001, 1002]
+    assert seen == [section.text for section in sections]
 
 
 def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
@@ -191,6 +227,7 @@ def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
         repository=DocumentRepository(tmp_path / "docs.db"),
         parser=BookishDocumentParser(),
         cache_directory=tmp_path / "cache",
+        token_counter=len,
     )
 
     indexer.index_all(

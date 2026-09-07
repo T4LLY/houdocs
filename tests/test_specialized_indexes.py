@@ -25,6 +25,7 @@ def _index_base_documents(source: Path, state: Path) -> DocumentRepository:
         repository=repository,
         parser=BookishDocumentParser(),
         cache_directory=state / "docs",
+        token_counter=len,
     ).index_all(source, houdini_version="22.0.429")
     return repository
 

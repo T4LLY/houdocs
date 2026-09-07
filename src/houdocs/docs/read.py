@@ -27,6 +27,20 @@ class DocumentReader:
             "text": "\n\n".join(item.text for item in sections if item.text).strip(),
         }
 
+    def sections(self, page: str, *, pick: int | None = None) -> dict[str, object]:
+        document = self._resolve_document(page, pick=pick)
+        return {
+            "sections": [
+                {
+                    "path": self._section_path(section),
+                    "tokens": section.token_count,
+                }
+                for section in self.repository.sections_for_document(
+                    document.document_id
+                )
+            ]
+        }
+
     def section_for(self, document: Document, section_name: str) -> dict[str, object]:
         matches = self.repository.sections_matching(document.document_id, section_name)
         if not matches:
@@ -78,13 +92,17 @@ class DocumentReader:
 
     @staticmethod
     def _section_choice(section: DocumentSection) -> str:
+        return "/".join(DocumentReader._section_path(section))
+
+    @staticmethod
+    def _section_path(section: DocumentSection) -> list[str]:
         parts = list(section.heading_path)
         if len(parts) > 1:
             parts = parts[1:]
         if parts:
-            return "/".join(parts)
+            return parts
         if section.heading:
-            return section.heading
+            return [section.heading]
         if section.anchor:
-            return f"#{section.anchor}"
-        return f"section {section.ordinal + 1}"
+            return [f"#{section.anchor}"]
+        return [f"section {section.ordinal + 1}"]

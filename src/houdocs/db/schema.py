@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS sections (
     anchor TEXT,
     heading TEXT,
     level INTEGER,
+    token_count INTEGER NOT NULL,
     text TEXT NOT NULL
 );
 

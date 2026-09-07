@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from houdocs.docs.bookish import BookishDocumentParser
@@ -12,6 +13,7 @@ from houdocs.docs.source import CachedDocument, cache_bookish_trees
 
 IssueCallback = Callable[[str, str, str | None], None]
 ProgressCallback = Callable[[int, int], None]
+TokenCounter = Callable[[str], int]
 
 
 def _document_id(relative_path: str) -> str:
@@ -38,10 +40,12 @@ class DocumentIndexer:
         repository: DocumentRepository,
         parser: BookishDocumentParser,
         cache_directory: Path,
+        token_counter: TokenCounter,
     ) -> None:
         self.repository = repository
         self.parser = parser
         self.cache_directory = cache_directory
+        self.token_counter = token_counter
 
     def index_all(
         self,
@@ -143,7 +147,13 @@ class DocumentIndexer:
             document_id=document_id,
             kind=kind,
         )
-        return [self._with_metadata(section, item.relative_path) for section in sections]
+        return [
+            self._with_metadata(
+                replace(section, token_count=self.token_counter(section.text)),
+                item.relative_path,
+            )
+            for section in sections
+        ]
 
     @staticmethod
     def _with_metadata(

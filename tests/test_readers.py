@@ -35,6 +35,7 @@ def _base(source: Path, state: Path) -> DocumentRepository:
         repository=repository,
         parser=BookishDocumentParser(),
         cache_directory=state / "docs",
+        token_counter=len,
     ).index_all(source, houdini_version="22.0.429")
     return repository
 
@@ -56,6 +57,46 @@ def test_read_returns_page_or_named_section_only(tmp_path: Path) -> None:
     assert "Intro." in page["text"] and "More." in page["text"]
     assert set(section) == {"text"}
     assert "More." in section["text"]
+
+
+def test_sections_lists_readable_paths_and_persisted_token_counts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text(
+        "= Page =\n\nIntro.\n\n== First ==\n\nOne.\n\n=== Details ===\n\nTwo.\n",
+        encoding="utf-8",
+    )
+    docs = _base(source, tmp_path / "state")
+    reader = DocumentReader(docs)
+    stored = docs.sections_for_document(docs.documents_for_title("Page")[0].document_id)
+
+    assert reader.sections("Page") == {
+        "sections": [
+            {"path": ["Page"], "tokens": stored[0].token_count},
+            {"path": ["First"], "tokens": stored[1].token_count},
+            {"path": ["First", "Details"], "tokens": stored[2].token_count},
+        ]
+    }
+
+
+def test_sections_reuses_read_pick_for_ambiguous_titles(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    (source / "nodes" / "lop").mkdir(parents=True)
+    (source / "nodes" / "sop").mkdir(parents=True)
+    (source / "nodes" / "lop" / "same.txt").write_text(
+        "= Same =\n\nLOP.\n", encoding="utf-8"
+    )
+    (source / "nodes" / "sop" / "same.txt").write_text(
+        "= Same =\n\nSOP.\n", encoding="utf-8"
+    )
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.sections("Same")
+    assert caught.value.error.choices == ("LOP / Same", "SOP / Same")
+    assert reader.sections("Same", pick=2)["sections"][0]["path"] == ["Same"]
 
 
 def test_read_ambiguous_title_lists_numbered_choices_and_pick_selects_one(

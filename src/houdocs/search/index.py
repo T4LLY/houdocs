@@ -118,7 +118,7 @@ class SearchIndexer:
                     content=section.text,
                     content_hash=section.content_hash,
                     embedding_profile=self.embedding_profile,
-                    token_count=self.token_counter(section.text),
+                    token_count=section.token_count,
                     metadata=dict(section.metadata),
                 )
             )

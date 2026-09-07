@@ -706,6 +706,32 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
     assert vex_result["hits"][0]["tokens"] == 14
 
 
+def test_load_entries_raises_on_corrupt_metadata_json(tmp_path: Path) -> None:
+    from houdocs.db.connection import connect
+    from houdocs.errors import HouDocsError
+
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=FakeDense(),
+    )
+    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})
+    backend.upsert([entry])
+
+    with connect(database) as connection:
+        connection.execute(
+            "UPDATE search_entries SET metadata_json = ? WHERE entry_id = ?",
+            ("not valid json{", "entry"),
+        )
+        connection.commit()
+
+    with pytest.raises(HouDocsError, match="Corrupt metadata_json") as exc_info:
+        backend._load_entries(["entry"])
+    assert exc_info.value.error.code == "docs_database_error"
+    assert exc_info.value.error.detail is not None
+
+
 def test_fts_operational_error_propagates(tmp_path: Path) -> None:
     import houdocs.search.lexical as lexical_module
 

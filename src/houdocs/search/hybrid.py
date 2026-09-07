@@ -482,6 +482,15 @@ class HybridSearchBackend:
 
     @staticmethod
     def _row_to_stored(row: sqlite3.Row) -> _StoredEntry:
+        raw_metadata = row["metadata_json"] or "{}"
+        try:
+            metadata = json.loads(raw_metadata)
+        except json.JSONDecodeError as exc:
+            raise HouDocsError(
+                "docs_database_error",
+                f"Corrupt metadata_json in search_entries for entry {row['entry_id']!r}.",
+                detail=str(exc),
+            ) from exc
         return _StoredEntry(
             entry_id=str(row["entry_id"]),
             namespace=str(row["namespace"]),
@@ -492,5 +501,5 @@ class HybridSearchBackend:
             token_count=(
                 int(row["token_count"]) if row["token_count"] is not None else None
             ),
-            metadata=json.loads(row["metadata_json"] or "{}"),
+            metadata=metadata,
         )

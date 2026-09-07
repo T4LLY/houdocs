@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 from collections.abc import Sequence
 
 
@@ -37,9 +36,6 @@ class SQLiteFtsIndex:
             LIMIT ?
         """
         params: list[object] = [_fts_query(query), *namespaces, limit]
-        try:
-            with self._connection_factory() as connection:
-                rows = connection.execute(sql, tuple(params)).fetchall()
-        except sqlite3.OperationalError:
-            return []
+        with self._connection_factory() as connection:
+            rows = connection.execute(sql, tuple(params)).fetchall()
         return [str(row["entry_id"]) for row in rows]

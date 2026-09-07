@@ -706,6 +706,20 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
     assert vex_result["hits"][0]["tokens"] == 14
 
 
+def test_fts_operational_error_propagates(tmp_path: Path) -> None:
+    import houdocs.search.lexical as lexical_module
+
+    def _make_conn():
+        conn = sqlite3.connect(str(tmp_path / "test.db"))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    index = lexical_module.SQLiteFtsIndex(_make_conn)
+
+    with pytest.raises(sqlite3.OperationalError):
+        index.search("test", namespaces=["docs"], limit=10)
+
+
 def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> None:
     from houdocs.python_docs.repository import PythonRepository
     from houdocs.search.domain import ALL_SEARCH_NAMESPACES, SearchDomain

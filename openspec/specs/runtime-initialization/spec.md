@@ -47,11 +47,15 @@ Initialization SHALL ask the selected Houdini runtime for `hou.findDirectories("
 
 ### Requirement: Capture runtime node parameter metadata once during init
 
-Initialization SHALL collect runtime node types and their parameter templates, including parameter IDs, labels, folder paths, type information, component counts, multiparm information, and ordering metadata. Importing HouDocs or using normal reader commands SHALL NOT import `hou`.
+Initialization SHALL collect runtime node types and their parameter templates, including parameter IDs, labels, folder paths, type information, component counts, multiparm information, and ordering metadata. It SHALL also capture each node type's minimum/maximum input counts and maximum output count. Importing HouDocs or using normal reader commands SHALL NOT import `hou`.
 
 #### Scenario: Capture node parameters
 - **WHEN** a runtime node type has parameters
-- **THEN** initialization captures those parameter records for later documentation reverse resolution
+- **THEN** initialization captures those parameter records as the canonical Node parameter structure and for later documentation reverse resolution
+
+#### Scenario: Capture node port structure
+- **WHEN** a runtime node type reports input/output limits
+- **THEN** initialization captures those counts so Node reads do not depend on an `@inputs` or `@outputs` documentation section to expose ports
 
 #### Scenario: Parameter introspection fails for one node
 - **WHEN** parameter collection fails for one runtime node type

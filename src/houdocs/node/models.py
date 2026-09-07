@@ -64,6 +64,9 @@ class RuntimeNodeType:
     category: str
     internal_name: str
     canonical_name: str
+    min_inputs: int | None
+    max_inputs: int | None
+    max_outputs: int | None
     parameters: tuple[RuntimeParameter, ...]
 
 

@@ -57,6 +57,17 @@ class NodeReader:
         document_id, metadata = record
         self.documents.document(document_id)
 
+        runtime_parameters = sorted(
+            (
+                item
+                for item in metadata.get("parameters", [])
+                if isinstance(item, dict) and bool(item.get("runtime_present"))
+            ),
+            key=lambda item: (
+                int(item.get("ordinal") or 0),
+                str(item.get("parm_id") or ""),
+            ),
+        )
         runtime_by_id = {
             str(item.get("parameter_id")): item
             for item in metadata.get("parameters", [])
@@ -70,49 +81,59 @@ class NodeReader:
         parameter_docs = [
             raw for raw in metadata.get("parameter_docs", []) if isinstance(raw, dict)
         ]
+        descriptions_by_parameter = self._runtime_parameter_descriptions(
+            parameter_docs,
+            links_by_doc,
+            runtime_by_id,
+        )
 
         if detail_kind == "parameters" and detail_key is not None:
             return self._parameter_detail(
                 node_type,
                 detail_key,
+                runtime_parameters,
                 parameter_docs,
                 links_by_doc,
                 runtime_by_id,
+                descriptions_by_parameter,
             )
         if detail_kind in {"inputs", "outputs"} and detail_key is not None:
             direction = "input" if detail_kind == "inputs" else "output"
             return self._port_detail(node_type, detail_kind, detail_key, metadata, direction)
 
         parameters: list[dict[str, object]] = []
-        for raw in parameter_docs:
-            description = str(raw.get("description") or "")
-            tokens = self.token_counter(description)
-            runtime_items = self._resolved_runtime_items(raw, links_by_doc, runtime_by_id)
-            if runtime_items:
-                for runtime in runtime_items:
-                    parm_id = str(runtime.get("parm_id") or "").strip()
-                    parameter: dict[str, object] = {
-                        "id": parm_id,
-                        "label": raw.get("label"),
-                        "tokens": tokens,
-                    }
-                    parm_type = _short_parameter_type(runtime.get("parm_type"))
-                    if parm_type is not None:
-                        parameter["type"] = parm_type
-                    if bool(runtime.get("multiparm")):
-                        parameter["multiparm"] = True
-                    parameters.append(parameter)
+        for runtime in runtime_parameters:
+            parameter_id = str(runtime.get("parameter_id") or "")
+            parm_id = str(runtime.get("parm_id") or "").strip()
+            if not parm_id:
                 continue
+            description = descriptions_by_parameter.get(parameter_id, "")
+            parameter: dict[str, object] = {
+                "id": parm_id,
+                "label": runtime.get("label"),
+                "tokens": self.token_counter(description),
+            }
+            parm_type = _short_parameter_type(runtime.get("parm_type"))
+            if parm_type is not None:
+                parameter["type"] = parm_type
+            if bool(runtime.get("multiparm")):
+                parameter["multiparm"] = True
+            parameters.append(parameter)
 
+        for raw in parameter_docs:
+            if self._resolved_runtime_items(raw, links_by_doc, runtime_by_id):
+                continue
             ordinal = raw.get("ordinal")
-            if isinstance(ordinal, int):
-                parameters.append(
-                    {
-                        "ordinal": ordinal,
-                        "label": raw.get("label"),
-                        "tokens": tokens,
-                    }
-                )
+            if not isinstance(ordinal, int):
+                continue
+            description = str(raw.get("description") or "")
+            parameters.append(
+                {
+                    "ordinal": ordinal,
+                    "label": raw.get("label"),
+                    "tokens": self.token_counter(description),
+                }
+            )
 
         def ports(direction: str) -> list[dict[str, object]]:
             values = self._ports(metadata, direction)
@@ -145,6 +166,28 @@ class NodeReader:
             result["related"] = related
         return result
 
+    def _runtime_parameter_descriptions(
+        self,
+        parameter_docs: list[dict[str, object]],
+        links_by_doc: dict[str, list[dict[str, object]]],
+        runtime_by_id: dict[str, dict[str, object]],
+    ) -> dict[str, str]:
+        descriptions: dict[str, list[str]] = {}
+        for raw in sorted(
+            parameter_docs, key=lambda item: int(item.get("ordinal") or 0)
+        ):
+            description = str(raw.get("description") or "")
+            for runtime in self._resolved_runtime_items(
+                raw, links_by_doc, runtime_by_id
+            ):
+                parameter_id = str(runtime.get("parameter_id") or "")
+                if not parameter_id:
+                    continue
+                values = descriptions.setdefault(parameter_id, [])
+                if description and description not in values:
+                    values.append(description)
+        return {key: "\n\n".join(values) for key, values in descriptions.items()}
+
     def _resolved_runtime_items(
         self,
         raw: dict[str, object],
@@ -169,20 +212,26 @@ class NodeReader:
         self,
         node_type: str,
         key: str,
+        runtime_parameters: list[dict[str, object]],
         parameter_docs: list[dict[str, object]],
         links_by_doc: dict[str, list[dict[str, object]]],
         runtime_by_id: dict[str, dict[str, object]],
+        descriptions_by_parameter: dict[str, str],
     ) -> dict[str, object]:
+        for runtime in runtime_parameters:
+            if str(runtime.get("parm_id") or "") != key:
+                continue
+            parameter_id = str(runtime.get("parameter_id") or "")
+            return {"description": descriptions_by_parameter.get(parameter_id, "")}
+
         unresolved_by_ordinal: dict[int, dict[str, object]] = {}
         for raw in parameter_docs:
             runtime_items = self._resolved_runtime_items(raw, links_by_doc, runtime_by_id)
-            for runtime in runtime_items:
-                if str(runtime.get("parm_id") or "") == key:
-                    return {"description": str(raw.get("description") or "")}
-            if not runtime_items:
-                ordinal = raw.get("ordinal")
-                if isinstance(ordinal, int):
-                    unresolved_by_ordinal[ordinal] = raw
+            if runtime_items:
+                continue
+            ordinal = raw.get("ordinal")
+            if isinstance(ordinal, int):
+                unresolved_by_ordinal[ordinal] = raw
 
         try:
             ordinal_key = int(key)

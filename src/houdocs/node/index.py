@@ -217,6 +217,9 @@ def _runtime_node_types(rows: tuple[dict[str, object], ...]) -> tuple[RuntimeNod
                 category=category,
                 internal_name=name,
                 canonical_name=canonical,
+                min_inputs=_integer(row.get("min_inputs")),
+                max_inputs=_integer(row.get("max_inputs")),
+                max_outputs=_integer(row.get("max_outputs")),
                 parameters=tuple(parameters),
             )
         )
@@ -236,3 +239,7 @@ def _issue(
 
 def _string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _integer(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None

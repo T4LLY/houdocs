@@ -205,6 +205,9 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
                 "category": "Sop",
                 "name": "example",
                 "canonical_name": "Sop/example",
+                "min_inputs": 2,
+                "max_inputs": 4,
+                "max_outputs": 1,
                 "parameters": [
                     {
                         "parameter_ordinal": 0,
@@ -213,7 +216,15 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
                         "folder_path": [],
                         "type": "Float",
                         "is_multiparm": False,
-                    }
+                    },
+                    {
+                        "parameter_ordinal": 1,
+                        "id": "mode",
+                        "label": "Mode",
+                        "folder_path": [],
+                        "type": "Menu",
+                        "is_multiparm": False,
+                    },
                 ],
             },
         ),
@@ -244,20 +255,41 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
     assert "float xyzdist(int geo, vector p)" in vex["text"]
     assert "Distance." in vex["text"]
     assert node == {
+        "inputs": [
+            {"label": "Input 1", "tokens": 0},
+            {"label": "Input 2", "tokens": 0},
+            {"label": "Input 3", "tokens": 0},
+            {"label": "Input 4", "tokens": 0},
+        ],
+        "outputs": [{"label": "Output 1", "tokens": 0}],
         "parameters": [
             {
                 "id": "strength",
                 "label": "Strength",
                 "tokens": 7,
                 "type": "Float",
-            }
-        ]
+            },
+            {
+                "id": "mode",
+                "label": "Mode",
+                "tokens": 0,
+                "type": "Menu",
+            },
+        ],
     }
     assert NodeReader(
         documents=docs,
         repository=NodeRepository(state / "docs.db"),
         token_counter=len,
     ).read("Sop/example/parameters/strength") == {"description": "Amount."}
+    reader = NodeReader(
+        documents=docs,
+        repository=NodeRepository(state / "docs.db"),
+        token_counter=len,
+    )
+    assert reader.read("Sop/example/parameters/mode") == {"description": ""}
+    assert reader.read("Sop/example/inputs/0") == {"description": ""}
+    assert reader.read("Sop/example/outputs/0") == {"description": ""}
 
 
 
@@ -415,7 +447,7 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
             },
             {
                 "id": "bindings",
-                "label": "Group Bindings",
+                "label": "Bindings",
                 "tokens": 18,
                 "type": "Folder",
                 "multiparm": True,

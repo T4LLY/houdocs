@@ -55,8 +55,10 @@ The public command SHALL be `houdocs read <page> [section] [--pick N]`. A page n
 - **THEN** `houdocs node Sop/attribwrangle` returns only non-empty inputs, outputs, parameters, and resolved related targets
 - **AND** input/output entries contain `label` and `tokens` but not `description`
 - **AND** port order represents port index without a repeated `index` field
-- **AND** resolved parameters contain `id`, `label`, `tokens`, `type`, and `multiparm: true` only when applicable
-- **AND** a parameter with no resolved runtime ID contains `ordinal`, `label`, and `tokens` instead
+- **AND** runtime parameters are the canonical parameter list and contain `id`, `label`, `tokens`, `type`, and `multiparm: true` only when applicable
+- **AND** runtime parameters without a documentation overlay remain listed with `tokens: 0` and an empty detail description
+- **AND** a documentation parameter with no resolved runtime ID contains `ordinal`, `label`, and `tokens` as a fallback entry
+- **AND** runtime input/output counts are the canonical port structure while documentation labels and descriptions overlay matching port ordinals
 - **AND** `tokens` is the OpenAI token count of the description returned by the matching detail path
 - **AND** the response does not repeat node identity, document metadata, page text, null values, empty arrays, resolution diagnostics, or descriptions
 

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.models import Document
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
+from houdocs.errors import HouDocsError
 from houdocs.node.index import NodeIndexer
 from houdocs.node.models import NodeTypeDocument
 from houdocs.node.read import NodeReader
@@ -42,10 +45,52 @@ def test_read_returns_page_or_named_section_only(tmp_path: Path) -> None:
     page = reader.read("Page")
     section = reader.read("Page", "details")
 
-    assert page["section"] is None
+    assert set(page) == {"text"}
     assert "Intro." in page["text"] and "More." in page["text"]
-    assert section["section"]["anchor"] == "details"
+    assert set(section) == {"text"}
     assert "More." in section["text"]
+
+
+def test_read_ambiguous_title_lists_numbered_choices_and_pick_selects_one(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "help"
+    (source / "nodes" / "lop").mkdir(parents=True)
+    (source / "nodes" / "sop").mkdir(parents=True)
+    (source / "nodes" / "lop" / "copytopoints.txt").write_text(
+        "= Copy to Points =\n\nLOP article.\n", encoding="utf-8"
+    )
+    (source / "nodes" / "sop" / "copytopoints.txt").write_text(
+        "= Copy to Points =\n\nSOP article.\n", encoding="utf-8"
+    )
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.read("Copy to Points")
+    assert caught.value.error.code == "document_ambiguous"
+    assert caught.value.error.detail == (
+        "1. LOP / Copy to Points\n2. SOP / Copy to Points"
+    )
+
+    assert reader.read("Copy to Points", pick=1) == {
+        "text": "Copy to Points\nLOP article."
+    }
+    assert reader.read("Copy to Points", pick=2) == {
+        "text": "Copy to Points\nSOP article."
+    }
+
+
+def test_read_pick_rejects_candidate_number_outside_available_range(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text("= Page =\n\nBody.\n", encoding="utf-8")
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.read("Page", pick=2)
+    assert caught.value.error.code == "document_pick_out_of_range"
 
 
 def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(

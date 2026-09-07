@@ -29,7 +29,7 @@ The public search command SHALL accept one query positional argument and an opti
 
 ### Requirement: Keep generic reads page-oriented
 
-The public read command SHALL accept a page positional argument and an optional section positional argument.
+The public read command SHALL accept a page positional argument, an optional section positional argument, and `--pick N` only for selecting a numbered candidate when a page title is ambiguous.
 
 #### Scenario: Read a complete page
 - **WHEN** the caller runs `houdocs read Node`
@@ -40,6 +40,12 @@ The public read command SHALL accept a page positional argument and an optional 
 - **WHEN** the caller runs `houdocs read Node setInput`
 - **THEN** `Node` is treated as the page
 - **AND** `setInput` is treated as the requested section
+
+#### Scenario: Resolve an ambiguous page title
+- **WHEN** a page title matches more than one indexed document
+- **THEN** HouDocs returns numbered human-readable candidates
+- **AND** the caller can re-run `houdocs read <page> --pick N` to select one candidate
+- **AND** the candidate list does not expose an internal document ID or source path
 
 ### Requirement: Keep specialist readers identifier-only
 

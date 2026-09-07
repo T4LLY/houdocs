@@ -15,17 +15,27 @@ Define the normal `read`, `node`, `python`, and `vex` commands after initializat
 - **AND** no Houdini process is running
 - **THEN** all four reader commands can resolve indexed documentation
 
-### Requirement: Read accepts only page and optional section
+### Requirement: Read returns only requested text and resolves ambiguous page titles by number
 
-The public command SHALL be `houdocs read <page> [section]`. A page name SHALL resolve by indexed document title. An optional section SHALL match indexed anchor, heading, or heading path using the existing document-reader matching semantics.
+The public command SHALL be `houdocs read <page> [section] [--pick N]`. A page name SHALL resolve by indexed document title. An optional section SHALL match indexed anchor, heading, or heading path using the existing document-reader matching semantics. `--pick` SHALL select a 1-based candidate when title resolution requires disambiguation.
 
 #### Scenario: Read a complete page
-- **WHEN** the caller provides only a page title
-- **THEN** HouDocs returns the document metadata, `section: null`, and the complete indexed page text
+- **WHEN** the caller provides only an unambiguous page title
+- **THEN** HouDocs returns only `text` containing the complete indexed page text
 
 #### Scenario: Read a section
 - **WHEN** the caller also provides an unambiguous section name
-- **THEN** HouDocs returns only that indexed section text and structured section metadata
+- **THEN** HouDocs returns only `text` containing that indexed section text
+
+#### Scenario: Page title is ambiguous
+- **WHEN** more than one indexed document has the requested title
+- **THEN** HouDocs returns numbered human-readable candidates
+- **AND** instructs the caller to re-run with `--pick N`
+- **AND** does not expose an internal document ID or source path in the candidate list
+
+#### Scenario: Select one ambiguous candidate
+- **WHEN** the caller supplies a valid 1-based `--pick N`
+- **THEN** HouDocs reads that candidate and returns only `text`
 
 ### Requirement: Specialized commands use direct specialized indexes
 

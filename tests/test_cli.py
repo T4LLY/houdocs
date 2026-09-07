@@ -109,6 +109,7 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     assert "hom" in search.stdout
     assert "document" in search.stdout
     assert "PAGE" in read.stdout and "[SECTION]" in read.stdout
+    assert "--pick" in read.stdout
     for output in (search.stdout, read.stdout, node.stdout, hom.stdout, vex.stdout):
         assert "--houdini-version" not in output
         assert "--top-k" not in output

@@ -173,11 +173,23 @@ def search_command(
 def read_command(
     page: Annotated[str, typer.Argument(metavar="PAGE")],
     section: Annotated[str | None, typer.Argument(metavar="SECTION")] = None,
+    pick: Annotated[
+        int | None,
+        typer.Option(
+            "--pick",
+            min=1,
+            help="Select a numbered candidate for an ambiguous page title.",
+        ),
+    ] = None,
 ) -> None:
     def action() -> None:
         config = load_config()
         paths = _offline_paths(config)
-        _emit(DocumentReader(DocumentRepository(paths.database)).read(page, section))
+        _emit(
+            DocumentReader(DocumentRepository(paths.database)).read(
+                page, section, pick=pick
+            )
+        )
 
     _invoke(action)
 

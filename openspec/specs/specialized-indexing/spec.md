@@ -95,3 +95,20 @@ A failure to parse one specialized document MUST be recorded as an init error is
 - THEN the item contributes to that specialized index's failed count
 - AND an error issue is added to `init-report.json`
 - AND indexing continues with remaining documents
+
+### Requirement: HOM and VEX specialized rows are search units
+
+The search index SHALL use direct HOM symbol rows and VEX function rows as the units for their respective search domains. Base HOM and VEX document sections SHALL NOT also be indexed into the general `document` domain.
+
+#### Scenario: Search for a HOM method
+
+- GIVEN `python_documents` contains `hou.Node.setInput`
+- WHEN the search index is built
+- THEN a `hom:hou.Node.setInput` search entry is created from that symbol's readable article text
+- AND the containing HOM page is not duplicated into the general `document` domain
+
+#### Scenario: Search for a VEX function
+
+- GIVEN `vex_documents` contains `xyzdist`
+- WHEN the search index is built
+- THEN a `vex:xyzdist` search entry is created for that function

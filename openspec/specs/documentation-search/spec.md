@@ -2,18 +2,20 @@
 
 ## Purpose
 
-Define the version-local documentation search index and the minimal `houdocs search <query>` contract.
+Define the version-local documentation search index, its four search domains, and the `houdocs search <query> [--domain ...]` contract.
 
 ## Requirements
 
 ### Requirement: Build search state during init
 
-`houdocs init` SHALL build or incrementally update the selected version's `search.db` from the current common documentation sections. Search state SHALL be rebuildable derived data and SHALL use only the `docs` namespace.
+`houdocs init` SHALL build the selected version's `search.db` as rebuildable derived data with `node`, `hom`, `vex`, and `document` namespaces.
 
 #### Scenario: First search indexing run
-- **WHEN** common documentation sections exist and the version has no search index
-- **THEN** every current section is added to `search.db`
-- **AND** each search entry references its section ID
+- **WHEN** common and specialized documentation indexes exist and the version has no search index
+- **THEN** node-document sections are indexed in `node`
+- **AND** general sections outside Node, HOM, and VEX are indexed in `document`
+- **AND** each directly readable HOM symbol is indexed as one `hom` search entry
+- **AND** each VEX function is indexed as one `vex` search entry
 
 #### Scenario: Reinitialize unchanged sections
 - **WHEN** a section content hash and embedding profile are unchanged
@@ -32,13 +34,17 @@ Documentation search SHALL use SQLite FTS lexical ranking plus dense Model2Vec e
 - **WHEN** a section ranks in both candidate lists
 - **THEN** its final score includes both reciprocal-rank contributions
 
-### Requirement: Keep the public search CLI query-only
+### Requirement: Expose only domain selection as a public search control
 
-The public command SHALL be `houdocs search <query>` with no public domain, top-k, rebuild, embedding-profile, or ranking options.
+The public command SHALL be `houdocs search <query> [--domain node|vex|hom|document]`. It SHALL NOT expose public top-k, rebuild, embedding-profile, or ranking controls.
 
-#### Scenario: Search initialized docs
+#### Scenario: Search initialized docs without a domain
 - **WHEN** the caller runs `houdocs search "packed primitive"`
-- **THEN** HouDocs searches the effective version's docs namespace using the configured internal defaults
+- **THEN** HouDocs searches all four domains using the configured internal defaults
+
+#### Scenario: Search one domain
+- **WHEN** the caller runs `houdocs search "nearest surface" --domain vex`
+- **THEN** only VEX function search entries participate in ranking
 
 ### Requirement: Search results do not return section bodies
 
@@ -58,9 +64,9 @@ Search indexing SHALL split large entry-ID and content-hash lookup sets into bou
 - **THEN** HouDocs queries those IDs in bounded batches
 - **AND** indexing continues without a `too many SQL variables` failure
 
-### Requirement: Embedding work is bounded by document
+### Requirement: Embedding work is bounded by source document
 
-Search indexing SHALL submit changed documentation sections to the embedding backend one document at a time rather than as one version-wide batch. This batching SHALL NOT change section identity, cache reuse, progress totals, or search results.
+Search indexing SHALL group changed search entries by their source document before submitting them to the embedding backend rather than using one version-wide batch. This batching SHALL NOT change section identity, cache reuse, progress totals, or search results.
 
 #### Scenario: Multiple documents require embeddings
 - **WHEN** changed sections from multiple documentation pages require embeddings

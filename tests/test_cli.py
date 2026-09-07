@@ -41,8 +41,9 @@ def test_cli_exposes_only_the_planned_top_level_commands() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("init", "search", "read", "node", "python", "vex"):
+    for command in ("init", "search", "read", "node", "hom", "vex"):
         assert command in result.stdout
+    assert "python" not in result.stdout
 
 
 def test_init_exposes_version_but_not_connection_target_options() -> None:
@@ -90,20 +91,25 @@ def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     search = runner.invoke(app, ["search", "--help"])
     read = runner.invoke(app, ["read", "--help"])
     node = runner.invoke(app, ["node", "--help"])
-    python = runner.invoke(app, ["python", "--help"])
+    hom = runner.invoke(app, ["hom", "--help"])
     vex = runner.invoke(app, ["vex", "--help"])
 
     assert (
         search.exit_code
         == read.exit_code
         == node.exit_code
-        == python.exit_code
+        == hom.exit_code
         == vex.exit_code
         == 0
     )
     assert "QUERY" in search.stdout
+    assert "--domain" in search.stdout
+    assert "node" in search.stdout
+    assert "vex" in search.stdout
+    assert "hom" in search.stdout
+    assert "document" in search.stdout
     assert "PAGE" in read.stdout and "[SECTION]" in read.stdout
-    for output in (search.stdout, read.stdout, node.stdout, python.stdout, vex.stdout):
+    for output in (search.stdout, read.stdout, node.stdout, hom.stdout, vex.stdout):
         assert "--houdini-version" not in output
         assert "--top-k" not in output
         assert "--rebuild" not in output

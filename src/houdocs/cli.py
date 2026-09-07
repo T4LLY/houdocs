@@ -17,6 +17,7 @@ from houdocs.node.repository import NodeRepository
 from houdocs.paths import VersionPaths, resolve_initialized_version
 from houdocs.python_docs.read import PythonDocumentReader
 from houdocs.python_docs.repository import PythonRepository
+from houdocs.search.domain import SearchDomain
 from houdocs.search.embedding import Model2VecEmbeddingProvider
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.service import DocumentSearchService
@@ -148,6 +149,10 @@ def init_command(
 @app.command("search")
 def search_command(
     query: Annotated[str, typer.Argument(metavar="QUERY")],
+    domain: Annotated[
+        SearchDomain | None,
+        typer.Option("--domain", help="Restrict search to one documentation domain."),
+    ] = None,
 ) -> None:
     def action() -> None:
         config = load_config()
@@ -155,9 +160,11 @@ def search_command(
         repository = DocumentRepository(paths.database)
         service = DocumentSearchService(
             repository=repository,
+            python_repository=PythonRepository(paths.database),
+            vex_repository=VexRepository(paths.database),
             backend=_search_backend(paths, config),
         )
-        _emit(service.search(query))
+        _emit(service.search(query, domain=domain))
 
     _invoke(action)
 
@@ -193,8 +200,8 @@ def node_command(
     _invoke(action)
 
 
-@app.command("python")
-def python_command(
+@app.command("hom")
+def hom_command(
     symbol: Annotated[str, typer.Argument(metavar="SYMBOL")],
 ) -> None:
     def action() -> None:

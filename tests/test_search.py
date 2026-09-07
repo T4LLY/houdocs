@@ -161,7 +161,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             embedding_profile="p1",
         ).index_all()
 
-    assert failed_backend.entry_states("docs") == {}
+    assert failed_backend.entry_states("document") == {}
 
     dense = FakeDense()
     retry = SearchIndexer(
@@ -176,7 +176,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
     ).index_all()
 
     assert retry["indexed"] == 1
-    assert dense.entries == ["doc#0"]
+    assert dense.entries == ["document:doc#0"]
 
 
 def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> None:
@@ -209,8 +209,8 @@ def test_search_skips_stale_hits_without_aborting_current_results(
         def search(self, query, *, namespaces, top_k):
             del query, namespaces, top_k
             return [
-                SearchHit("stale", "docs", "missing", 1.0, {}),
-                SearchHit("current", "docs", "doc#0", 0.5, {}),
+                SearchHit("stale", "document", "missing", 1.0, {}),
+                SearchHit("current", "document", "doc#0", 0.5, {}),
             ]
 
     docs = DocumentRepository(tmp_path / "docs.db")
@@ -363,3 +363,153 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
     assert profiles == {entry_id: "profile" for entry_id in entry_ids}
     assert set(loaded) == set(entry_ids)
     assert parameter_counts == [2, 2, 1, 2, 2, 1]
+
+
+def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) -> None:
+    from houdocs.python_docs.models import PythonDocumentRecord
+    from houdocs.python_docs.repository import PythonRepository
+    from houdocs.vex_docs.models import VexDocumentRecord
+    from houdocs.vex_docs.repository import VexRepository
+
+    database = tmp_path / "docs.db"
+    docs = DocumentRepository(database)
+    docs.replace_document(
+        Document("concept", "Overview", "overview.txt", "concept", "22.0.429", "hc"),
+        [_section("concept", 0, "Overview", "general documentation")],
+    )
+    node_section = _section("node", 0, "Copy to Points", "copy geometry to points")
+    node_section = DocumentSection(
+        **{
+            **node_section.__dict__,
+            "kind": "node-doc",
+            "metadata": {"kind": "node-doc", "heading_path": ["Page", "Copy to Points"]},
+        }
+    )
+    docs.replace_document(
+        Document("node", "Copy to Points", "nodes/sop/copytopoints.txt", "node-doc", "22.0.429", "hn"),
+        [node_section],
+    )
+    hom_text = "hou.Node\n\n::`setInput(self, input_index, node)`:\n    Connect another node."
+    hom_section = _section("hom", 0, "hou.Node", hom_text)
+    hom_section = DocumentSection(
+        **{
+            **hom_section.__dict__,
+            "kind": "hom",
+            "metadata": {"kind": "hom", "heading_path": ["hou.Node"]},
+        }
+    )
+    docs.replace_document(
+        Document("hom", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
+        [hom_section],
+    )
+    vex_section = _section("vex", 0, "xyzdist", "xyzdist finds the nearest surface point")
+    vex_section = DocumentSection(
+        **{
+            **vex_section.__dict__,
+            "kind": "vex",
+            "metadata": {"kind": "vex", "heading_path": ["xyzdist"]},
+        }
+    )
+    docs.replace_document(
+        Document("vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"),
+        [vex_section],
+    )
+
+    hom = PythonRepository(database)
+    hom.replace_all(
+        [
+            PythonDocumentRecord("hou.Node", "hom", "hou", "Node", "class", (), {}),
+            PythonDocumentRecord(
+                "hou.Node.setInput",
+                "hom",
+                "hou.Node",
+                "setInput",
+                "method",
+                ("setInput(self, input_index, node)",),
+                {},
+            ),
+            PythonDocumentRecord(
+                "hou.Node.missing",
+                "hom",
+                "hou.Node",
+                "missing",
+                "method",
+                ("missing()",),
+                {},
+            ),
+        ]
+    )
+    vex = VexRepository(database)
+    vex.replace_all(
+        [
+            VexDocumentRecord(
+                "xyzdist",
+                "vex",
+                ("float xyzdist(int geometry, vector origin)",),
+                ("sop",),
+                "geometry",
+                (),
+                None,
+                {},
+            )
+        ]
+    )
+
+    backend = HybridSearchBackend(
+        database=tmp_path / "search.db",
+        embeddings=FakeEmbeddings(),
+        dense_index=FakeDense(),
+    )
+    result = SearchIndexer(
+        documents=docs,
+        python_documents=hom,
+        vex_documents=vex,
+        backend=backend,
+        store=SearchStore(tmp_path / "search.db"),
+        embedding_profile="p1",
+    ).index_all()
+
+    assert result["entries"] == 5
+    assert backend.entry_ids("document") == ["document:concept#0"]
+    assert backend.entry_ids("node") == ["node:node#0"]
+    assert backend.entry_ids("hom") == ["hom:hou.Node", "hom:hou.Node.setInput"]
+    assert backend.entry_ids("vex") == ["vex:xyzdist"]
+
+    with backend._connect() as connection:
+        hom_member = connection.execute(
+            "SELECT content FROM search_content WHERE entry_id = ?",
+            ("hom:hou.Node.setInput",),
+        ).fetchone()
+    assert hom_member is not None
+    assert "hou.Node.setInput" in hom_member["content"]
+    assert "Connect another node." in hom_member["content"]
+
+
+def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> None:
+    from houdocs.python_docs.repository import PythonRepository
+    from houdocs.search.domain import ALL_SEARCH_NAMESPACES, SearchDomain
+    from houdocs.vex_docs.repository import VexRepository
+
+    class RecordingBackend:
+        def __init__(self) -> None:
+            self.namespaces: list[str] = []
+
+        def search(self, query, *, namespaces, top_k):
+            del query, top_k
+            self.namespaces = list(namespaces)
+            return []
+
+    docs = DocumentRepository(tmp_path / "docs.db")
+    backend = RecordingBackend()
+    service = DocumentSearchService(
+        repository=docs,
+        python_repository=PythonRepository(docs.database),
+        vex_repository=VexRepository(docs.database),
+        backend=backend,
+    )
+
+    service.search("node input", domain=SearchDomain.HOM)
+    assert backend.namespaces == ["hom"]
+
+    service.search("node input")
+    assert backend.namespaces == list(ALL_SEARCH_NAMESPACES)

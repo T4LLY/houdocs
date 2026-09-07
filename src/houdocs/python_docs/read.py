@@ -14,22 +14,22 @@ class PythonDocumentReader:
         self.document_reader = DocumentReader(documents)
 
     def read(self, symbol: str) -> dict[str, object]:
-        canonical = _normalize_symbol(symbol)
+        canonical = normalize_hom_symbol(symbol)
         record = self.repository.get(canonical)
         if record is None:
             raise HouDocsError(
-                "python_document_not_found",
-                f"Python/HOM documentation not found: {canonical}",
+                "hom_document_not_found",
+                f"HOM documentation not found: {canonical}",
             )
         document = self.documents.document(record.document_id)
         page_text = str(self.document_reader.page(document)["text"])
         text = page_text
         if record.kind in {"method", "function"} and record.member_name:
-            block = _extract_python_member(page_text, record.member_name)
+            block = extract_hom_member(page_text, record.member_name)
             if block is None:
                 raise HouDocsError(
-                    "python_document_member_not_found",
-                    f"Python/HOM member not found in {document.title}: {record.member_name}",
+                    "hom_document_member_not_found",
+                    f"HOM member not found in {document.title}: {record.member_name}",
                 )
             _signature, text = block
         return {
@@ -45,17 +45,17 @@ class PythonDocumentReader:
         }
 
 
-def _normalize_symbol(symbol: str) -> str:
+def normalize_hom_symbol(symbol: str) -> str:
     value = symbol.strip().replace("#", ".")
     if value.endswith("()"):
         value = value[:-2]
     value = value.strip(".")
     if not value or any(not part for part in value.split(".")):
-        raise HouDocsError("python_document_invalid_symbol", "Provide a Python/HOM symbol name.")
+        raise HouDocsError("hom_document_invalid_symbol", "Provide a HOM symbol name.")
     return value
 
 
-def _extract_python_member(text: str, member: str) -> tuple[str, str] | None:
+def extract_hom_member(text: str, member: str) -> tuple[str, str] | None:
     lines = text.splitlines()
     start: int | None = None
     signature: str | None = None

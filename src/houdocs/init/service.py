@@ -91,16 +91,18 @@ class InitService:
             on_warning=warning,
             on_error=error,
         )
+        python_repository = PythonRepository(paths.database)
         progress_view.show("Indexing Python/HOM documentation")
         python = PythonIndexer(
             documents=repository,
-            repository=PythonRepository(paths.database),
+            repository=python_repository,
             docs_directory=paths.docs,
         ).index_all(on_warning=warning, on_error=error)
+        vex_repository = VexRepository(paths.database)
         progress_view.show("Indexing VEX documentation")
         vex = VexIndexer(
             documents=repository,
-            repository=VexRepository(paths.database),
+            repository=vex_repository,
             docs_directory=paths.docs,
         ).index_all(on_warning=warning, on_error=error)
 
@@ -114,6 +116,8 @@ class InitService:
         )
         search = SearchIndexer(
             documents=repository,
+            python_documents=python_repository,
+            vex_documents=vex_repository,
             backend=search_backend,
             store=SearchStore(paths.search_database),
             embedding_profile=config.search_embedding.docs_profile,

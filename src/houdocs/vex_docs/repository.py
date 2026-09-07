@@ -59,6 +59,22 @@ class VexRepository:
             ).fetchone()
         if row is None:
             return None
+        return self._record(row)
+
+    def all(self) -> list[VexDocumentRecord]:
+        with connect(self.database) as connection:
+            rows = connection.execute(
+                "SELECT * FROM vex_documents ORDER BY function_name COLLATE NOCASE, function_name"
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def count(self) -> int:
+        with connect(self.database) as connection:
+            row = connection.execute("SELECT COUNT(*) FROM vex_documents").fetchone()
+        return int(row[0])
+
+    @staticmethod
+    def _record(row: sqlite3.Row) -> VexDocumentRecord:
         return VexDocumentRecord(
             function_name=str(row["function_name"]),
             document_id=str(row["document_id"]),
@@ -69,8 +85,3 @@ class VexRepository:
             status=row["status"],
             metadata=dict(json.loads(row["metadata_json"] or "{}")),
         )
-
-    def count(self) -> int:
-        with connect(self.database) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM vex_documents").fetchone()
-        return int(row[0])

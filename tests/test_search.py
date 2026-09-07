@@ -91,19 +91,10 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
 
     assert result == {"entries": 2, "indexed": 2, "skipped": 0, "removed": 0}
     payload = DocumentSearchService(repository=docs, backend=backend).search("alpha")
-    assert payload["query"] == "alpha"
-    assert payload["hits"][0]["heading"] == "Alpha"
+    assert set(payload) == {"hits"}
+    assert payload["hits"][0]["path"] == ["Page", "Alpha"]
     assert "text" not in payload["hits"][0]
-    assert set(payload["hits"][0]) == {
-        "section_id",
-        "score",
-        "document",
-        "heading",
-        "heading_path",
-        "kind",
-        "relative_path",
-        "anchor",
-    }
+    assert set(payload["hits"][0]) == {"path", "kind", "score"}
 
 
 def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
@@ -223,7 +214,7 @@ def test_search_skips_stale_hits_without_aborting_current_results(
         "alpha"
     )
 
-    assert [hit["section_id"] for hit in result["hits"]] == ["doc#0"]
+    assert [hit["path"] for hit in result["hits"]] == [["Page", "Alpha"]]
 
 
 def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -> None:
@@ -483,6 +474,130 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert hom_member is not None
     assert "hou.Node.setInput" in hom_member["content"]
     assert "Connect another node." in hom_member["content"]
+
+
+
+def test_search_output_collapses_document_heading_metadata_to_path(tmp_path: Path) -> None:
+    docs = DocumentRepository(tmp_path / "docs.db")
+    section = DocumentSection(
+        section_id="doc#0",
+        document_id="doc",
+        ordinal=0,
+        anchor="inputs",
+        heading="Inputs",
+        heading_path=("Copy to Points", "Inputs"),
+        heading_level=2,
+        kind="node-doc",
+        content_hash="hash",
+        token_count=10,
+        text="inputs",
+        metadata={},
+    )
+    docs.replace_document(
+        Document(
+            "doc",
+            "Copy to Points",
+            "nodes/sop/copytopoints.txt",
+            "node-doc",
+            "22.0.429",
+            "h",
+        ),
+        [section],
+    )
+
+    class OneHitBackend:
+        def search(self, query, *, namespaces, top_k):
+            del query, namespaces, top_k
+            return [SearchHit("node:doc#0", "node", "doc#0", 1.0, {})]
+
+    result = DocumentSearchService(repository=docs, backend=OneHitBackend()).search(
+        "copy to points"
+    )
+
+    assert result == {
+        "hits": [
+            {
+                "path": ["Copy to Points", "Inputs"],
+                "kind": "node-doc",
+                "score": 10000.0,
+            }
+        ]
+    }
+
+
+def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
+    from houdocs.python_docs.models import PythonDocumentRecord
+    from houdocs.python_docs.repository import PythonRepository
+    from houdocs.vex_docs.models import VexDocumentRecord
+    from houdocs.vex_docs.repository import VexRepository
+
+    database = tmp_path / "docs.db"
+    docs = DocumentRepository(database)
+    docs.replace_document(
+        Document("hom-doc", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
+        [],
+    )
+    docs.replace_document(
+        Document("vex-doc", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"),
+        [],
+    )
+    hom = PythonRepository(database)
+    hom.replace_all(
+        [
+            PythonDocumentRecord(
+                "hou.Node.setInput",
+                "hom-doc",
+                "hou.Node",
+                "setInput",
+                "method",
+                ("setInput(self, input_index, node)",),
+                {},
+            )
+        ]
+    )
+    vex = VexRepository(database)
+    vex.replace_all(
+        [
+            VexDocumentRecord(
+                "xyzdist",
+                "vex-doc",
+                ("float xyzdist(int geometry, vector origin)",),
+                ("sop",),
+                "geometry",
+                (),
+                None,
+                {},
+            )
+        ]
+    )
+
+    class SpecializedBackend:
+        def __init__(self, hit: SearchHit) -> None:
+            self.hit = hit
+
+        def search(self, query, *, namespaces, top_k):
+            del query, namespaces, top_k
+            return [self.hit]
+
+    hom_result = DocumentSearchService(
+        repository=docs,
+        python_repository=hom,
+        vex_repository=vex,
+        backend=SpecializedBackend(
+            SearchHit("hom:hou.Node.setInput", "hom", "hou.Node.setInput", 1.0, {})
+        ),
+    ).search("connect node input")
+    vex_result = DocumentSearchService(
+        repository=docs,
+        python_repository=hom,
+        vex_repository=vex,
+        backend=SpecializedBackend(SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {})),
+    ).search("nearest surface")
+
+    assert hom_result["hits"][0]["path"] == ["hou.Node", "setInput"]
+    assert hom_result["hits"][0]["kind"] == "hom"
+    assert vex_result["hits"][0]["path"] == ["xyzdist"]
+    assert vex_result["hits"][0]["kind"] == "vex"
 
 
 def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> None:

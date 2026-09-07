@@ -10,6 +10,15 @@ from houdocs.search.rrf import normalize_rrf_score
 from houdocs.vex_docs.repository import VexRepository
 
 
+def _search_path(document: str, heading_path: tuple[str, ...] | list[str]) -> list[str]:
+    path = [document]
+    for heading in heading_path:
+        if not heading or heading == path[-1]:
+            continue
+        path.append(heading)
+    return path
+
+
 class DocumentSearchService:
     def __init__(
         self,
@@ -38,7 +47,7 @@ class DocumentSearchService:
             rendered = self._render_hit(hit)
             if rendered is not None:
                 output.append(rendered)
-        return {"query": query, "hits": output}
+        return {"hits": output}
 
     def _render_hit(self, hit: SearchHit) -> dict[str, object] | None:
         if hit.namespace in {SearchDomain.NODE.value, SearchDomain.DOCUMENT.value}:
@@ -61,14 +70,9 @@ class DocumentSearchService:
                 raise
             return None
         return {
-            "section_id": section.section_id,
-            "score": normalize_rrf_score(hit.score),
-            "document": document.title,
-            "heading": section.heading,
-            "heading_path": list(section.heading_path),
+            "path": _search_path(document.title, section.heading_path),
             "kind": section.kind,
-            "relative_path": document.relative_path,
-            "anchor": section.anchor,
+            "score": normalize_rrf_score(hit.score),
         }
 
     def _hom_hit(self, hit: SearchHit) -> dict[str, object] | None:
@@ -87,14 +91,9 @@ class DocumentSearchService:
             else [record.symbol]
         )
         return {
-            "section_id": hit.id,
-            "score": normalize_rrf_score(hit.score),
-            "document": document.title,
-            "heading": record.member_name or record.symbol,
-            "heading_path": heading_path,
+            "path": _search_path(document.title, heading_path),
             "kind": document.kind,
-            "relative_path": document.relative_path,
-            "anchor": None,
+            "score": normalize_rrf_score(hit.score),
         }
 
     def _vex_hit(self, hit: SearchHit) -> dict[str, object] | None:
@@ -108,12 +107,7 @@ class DocumentSearchService:
                 raise
             return None
         return {
-            "section_id": hit.id,
-            "score": normalize_rrf_score(hit.score),
-            "document": document.title,
-            "heading": record.function_name,
-            "heading_path": [record.function_name],
+            "path": _search_path(document.title, [record.function_name]),
             "kind": document.kind,
-            "relative_path": document.relative_path,
-            "anchor": None,
+            "score": normalize_rrf_score(hit.score),
         }

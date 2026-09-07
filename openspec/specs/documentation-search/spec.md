@@ -46,14 +46,15 @@ The public command SHALL be `houdocs search <query> [--domain node|vex|hom|docum
 - **WHEN** the caller runs `houdocs search "nearest surface" --domain vex`
 - **THEN** only VEX function search entries participate in ranking
 
-### Requirement: Search results do not return section bodies
+### Requirement: Search results expose only compact navigation metadata
 
-Each hit SHALL return `section_id`, `score`, `document`, `heading`, `heading_path`, `kind`, `relative_path`, and `anchor`. Search SHALL NOT return section body text or Houbridge Resource identifiers.
+The top-level search result SHALL contain only `hits`. Each hit SHALL return `path`, `kind`, and `score`. `path` SHALL combine the document title and heading hierarchy without repeating an identical adjacent title. Search SHALL NOT return the query, section body text, internal section IDs, source paths, anchors, or duplicated heading fields.
 
 #### Scenario: Return one search hit
 - **WHEN** a documentation section matches the query
-- **THEN** the hit identifies the section and document metadata
-- **AND** the hit contains no `text` or `resource` field
+- **THEN** the hit contains only `path`, `kind`, and `score`
+- **AND** `path` preserves the document and heading hierarchy without duplicated adjacent titles
+- **AND** the response contains no `query`, `text`, `section_id`, `relative_path`, `anchor`, `document`, `heading`, or `heading_path` field
 
 ### Requirement: Bound SQLite lookup parameter counts
 

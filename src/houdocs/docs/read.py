@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
@@ -40,11 +38,7 @@ class DocumentReader:
             raise HouDocsError(
                 "document_section_ambiguous",
                 f"Section name is ambiguous in {document.title}: {section_name}",
-                detail=json.dumps(
-                    [self._section_contract(item) for item in matches],
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                choices=[self._section_choice(item) for item in matches],
             )
         return {"text": matches[0].text}
 
@@ -60,14 +54,10 @@ class DocumentReader:
                 )
             return matches[pick - 1]
         if len(matches) > 1:
-            choices = "\n".join(
-                f"{index}. {self._choice_label(item)}"
-                for index, item in enumerate(matches, start=1)
-            )
             raise HouDocsError(
                 "document_ambiguous",
                 f"Document title is ambiguous: {page}. Re-run with --pick N.",
-                detail=choices,
+                choices=[self._choice_label(item) for item in matches],
             )
         return matches[0]
 
@@ -87,12 +77,14 @@ class DocumentReader:
         return f"{domain} / {document.title}"
 
     @staticmethod
-    def _section_contract(section: DocumentSection) -> dict[str, object]:
-        return {
-            "section_id": section.section_id,
-            "ordinal": section.ordinal,
-            "heading": section.heading,
-            "heading_path": list(section.heading_path),
-            "level": section.heading_level,
-            "anchor": section.anchor,
-        }
+    def _section_choice(section: DocumentSection) -> str:
+        parts = list(section.heading_path)
+        if len(parts) > 1:
+            parts = parts[1:]
+        if parts:
+            return "/".join(parts)
+        if section.heading:
+            return section.heading
+        if section.anchor:
+            return f"#{section.anchor}"
+        return f"section {section.ordinal + 1}"

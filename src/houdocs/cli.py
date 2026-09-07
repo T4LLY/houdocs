@@ -50,6 +50,8 @@ def _fail(error: HouDocsError) -> None:
     }
     if error.error.detail:
         payload["detail"] = error.error.detail
+    if error.error.choices:
+        payload["choices"] = list(error.error.choices)
     _emit(payload, exit_code=1)
 
 

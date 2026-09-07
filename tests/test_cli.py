@@ -87,6 +87,42 @@ def test_offline_command_serializes_raw_sqlite_errors(
     assert payload["detail"] == "database is locked"
 
 
+def test_ambiguous_read_error_emits_native_choices(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    (source / "nodes" / "lop").mkdir(parents=True)
+    (source / "nodes" / "sop").mkdir(parents=True)
+    (source / "nodes" / "lop" / "copytopoints.txt").write_text(
+        "= Copy to Points =\n\nLOP.\n", encoding="utf-8"
+    )
+    (source / "nodes" / "sop" / "copytopoints.txt").write_text(
+        "= Copy to Points =\n\nSOP.\n", encoding="utf-8"
+    )
+
+    from houdocs.docs.bookish import BookishDocumentParser
+    from houdocs.docs.index import DocumentIndexer
+    from houdocs.paths import VersionPaths
+
+    paths = VersionPaths.for_version("22.0.429")
+    paths.ensure()
+    repository = DocumentRepository(paths.database)
+    DocumentIndexer(
+        repository=repository,
+        parser=BookishDocumentParser(),
+        cache_directory=paths.docs,
+    ).index_all(source, houdini_version="22.0.429")
+
+    result = runner.invoke(app, ["read", "Copy to Points"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "error": True,
+        "code": "document_ambiguous",
+        "message": "Document title is ambiguous: Copy to Points. Re-run with --pick N.",
+        "choices": ["LOP / Copy to Points", "SOP / Copy to Points"],
+    }
+
+
 def test_search_and_reader_commands_do_not_expose_extra_options() -> None:
     search = runner.invoke(app, ["search", "--help"])
     read = runner.invoke(app, ["read", "--help"])

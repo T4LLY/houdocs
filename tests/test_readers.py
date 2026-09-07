@@ -75,8 +75,10 @@ def test_read_ambiguous_title_lists_numbered_choices_and_pick_selects_one(
     with pytest.raises(HouDocsError) as caught:
         reader.read("Copy to Points")
     assert caught.value.error.code == "document_ambiguous"
-    assert caught.value.error.detail == (
-        "1. LOP / Copy to Points\n2. SOP / Copy to Points"
+    assert caught.value.error.detail is None
+    assert caught.value.error.choices == (
+        "LOP / Copy to Points",
+        "SOP / Copy to Points",
     )
 
     assert reader.read("Copy to Points", pick=1) == {
@@ -85,6 +87,26 @@ def test_read_ambiguous_title_lists_numbered_choices_and_pick_selects_one(
     assert reader.read("Copy to Points", pick=2) == {
         "text": "Copy to Points\nSOP article."
     }
+
+
+def test_read_section_ambiguity_uses_native_human_readable_choices(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "page.txt").write_text(
+        "= Page =\n\n== First ==\n\n=== Details ===\n\nOne.\n\n"
+        "== Second ==\n\n=== Details ===\n\nTwo.\n",
+        encoding="utf-8",
+    )
+    reader = DocumentReader(_base(source, tmp_path / "state"))
+
+    with pytest.raises(HouDocsError) as caught:
+        reader.read("Page", "Details")
+
+    assert caught.value.error.code == "document_section_ambiguous"
+    assert caught.value.error.detail is None
+    assert caught.value.error.choices == ("First/Details", "Second/Details")
 
 
 def test_read_pick_rejects_candidate_number_outside_available_range(

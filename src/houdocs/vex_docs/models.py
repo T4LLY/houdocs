@@ -12,4 +12,3 @@ class VexDocumentRecord:
     group_name: str | None
     tags: tuple[str, ...]
     status: str | None
-    metadata: dict[str, object]

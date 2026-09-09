@@ -45,5 +45,5 @@ class PythonIndexer:
                     emit_specialized_issue(on_warning, "python_symbol_duplicate", "Duplicate Python/HOM symbol; keeping first indexed document.", document.relative_path, record.symbol)
                     continue
                 by_symbol[record.symbol] = record
-        self.repository.replace_all(list(by_symbol.values()))
+        self.repository.insert_all(list(by_symbol.values()))
         return {"documents": documents, "symbols": len(by_symbol), "duplicates": duplicates, "failed": failed}

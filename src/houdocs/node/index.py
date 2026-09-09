@@ -112,7 +112,7 @@ class NodeIndexer:
             for key in unresolved:
                 unresolved[key].extend(result.unresolved[key])
 
-        self.repository.replace_all(records)
+        self.repository.insert_all(records)
         if write_report:
             write_unresolved(
                 unresolved_file,

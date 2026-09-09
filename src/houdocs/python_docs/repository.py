@@ -14,16 +14,15 @@ class PythonRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def replace_all(self, records: Sequence[PythonDocumentRecord]) -> None:
+    def insert_all(self, records: Sequence[PythonDocumentRecord]) -> None:
         try:
             with connect_writable(self.database) as connection:
-                connection.execute("DELETE FROM python_documents")
                 connection.executemany(
                     """
                     INSERT INTO python_documents(
                         symbol, document_id, parent_symbol, member_name, kind,
-                        signatures_json, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        signatures_json
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -32,8 +31,11 @@ class PythonRepository:
                             item.parent_symbol,
                             item.member_name,
                             item.kind,
-                            json.dumps(list(item.signatures), ensure_ascii=False, separators=(",", ":")),
-                            json.dumps(item.metadata, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                            json.dumps(
+                                list(item.signatures),
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
                         )
                         for item in records
                     ],
@@ -45,7 +47,6 @@ class PythonRepository:
                 f"Unable to write Python/HOM documentation index: {self.database}",
                 detail=str(exc),
             ) from exc
-
 
     def get(self, symbol: str) -> PythonDocumentRecord | None:
         with connect_readonly(self.database) as connection:
@@ -64,11 +65,6 @@ class PythonRepository:
             ).fetchall()
         return [self._record(row) for row in rows]
 
-    def count(self) -> int:
-        with connect_readonly(self.database) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM python_documents").fetchone()
-        return int(row[0])
-
     @staticmethod
     def _record(row: sqlite3.Row) -> PythonDocumentRecord:
         return PythonDocumentRecord(
@@ -78,5 +74,4 @@ class PythonRepository:
             member_name=row["member_name"],
             kind=str(row["kind"]),
             signatures=tuple(json.loads(row["signatures_json"] or "[]")),
-            metadata=dict(json.loads(row["metadata_json"] or "{}")),
         )

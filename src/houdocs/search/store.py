@@ -10,18 +10,11 @@ CREATE TABLE IF NOT EXISTS search_entries (
     entry_id TEXT PRIMARY KEY,
     namespace TEXT NOT NULL,
     source_id TEXT NOT NULL,
-    content_hash TEXT NOT NULL,
     embedding_profile_id TEXT NOT NULL,
-    token_count INTEGER,
-    metadata_json TEXT
+    token_count INTEGER
 );
 CREATE INDEX IF NOT EXISTS search_entries_namespace_lookup
 ON search_entries(namespace);
-
-CREATE TABLE IF NOT EXISTS search_content (
-    entry_id TEXT PRIMARY KEY REFERENCES search_entries(entry_id) ON DELETE CASCADE,
-    content TEXT NOT NULL
-);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
     entry_id UNINDEXED,

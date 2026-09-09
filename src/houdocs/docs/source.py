@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -15,10 +14,7 @@ IssueCallback = Callable[[str, str, str | None], None]
 @dataclass(frozen=True)
 class CachedDocument:
     relative_path: str
-    source_path: Path
-    source_member: str | None
     cached_path: Path
-    content_hash: str
 
 
 def cache_bookish_trees(
@@ -58,8 +54,6 @@ def cache_bookish_trees(
                 continue
             cached_by_relative[relative] = _cache_bytes(
                 relative=relative,
-                source_path=source_path,
-                source_member=None,
                 data=data,
                 destination=destination,
             )
@@ -93,8 +87,6 @@ def cache_bookish_trees(
                             continue
                         cached_by_relative[relative] = _cache_bytes(
                             relative=relative,
-                            source_path=archive_path,
-                            source_member=member_path.as_posix(),
                             data=data,
                             destination=destination,
                         )
@@ -113,28 +105,15 @@ def cache_bookish_trees(
 def _cache_bytes(
     *,
     relative: str,
-    source_path: Path,
-    source_member: str | None,
     data: bytes,
     destination: Path,
 ) -> CachedDocument:
-    content_hash = hashlib.sha256(data).hexdigest()
     cached_path = destination / Path(relative)
     cached_path.parent.mkdir(parents=True, exist_ok=True)
-    if (
-        not cached_path.exists()
-        or hashlib.sha256(cached_path.read_bytes()).hexdigest() != content_hash
-    ):
-        temporary = cached_path.with_suffix(cached_path.suffix + ".tmp")
-        temporary.write_bytes(data)
-        temporary.replace(cached_path)
-    return CachedDocument(
-        relative_path=relative,
-        source_path=source_path,
-        source_member=source_member,
-        cached_path=cached_path,
-        content_hash=content_hash,
-    )
+    temporary = cached_path.with_suffix(cached_path.suffix + ".tmp")
+    temporary.write_bytes(data)
+    temporary.replace(cached_path)
+    return CachedDocument(relative_path=relative, cached_path=cached_path)
 
 
 def _report(

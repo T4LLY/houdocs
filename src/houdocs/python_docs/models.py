@@ -11,4 +11,3 @@ class PythonDocumentRecord:
     member_name: str | None
     kind: str
     signatures: tuple[str, ...]
-    metadata: dict[str, object]

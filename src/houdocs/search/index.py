@@ -17,6 +17,7 @@ from houdocs.vex_docs.repository import VexRepository
 
 EmbeddingProgress = Callable[[int, int, int, float], None]
 TokenCounter = Callable[[str], int]
+EntryGroups = dict[str, list[SearchEntry]]
 
 
 class SearchIndexer:
@@ -42,17 +43,16 @@ class SearchIndexer:
         *,
         embedding_progress: EmbeddingProgress | None = None,
     ) -> dict[str, int]:
-        entries = [
-            *self._document_entries(),
-            *self._hom_entries(),
-            *self._vex_entries(),
-        ]
+        grouped: EntryGroups = {}
+        for entry_groups in (
+            self._document_entries(),
+            self._hom_entries(),
+            self._vex_entries(),
+        ):
+            for document_id, entries in entry_groups.items():
+                grouped.setdefault(document_id, []).extend(entries)
 
-        grouped: dict[str, list[SearchEntry]] = {}
-        for entry in entries:
-            group = str(entry.metadata.get("document_id") or entry.id)
-            grouped.setdefault(group, []).append(entry)
-
+        entries = [entry for group in grouped.values() for entry in group]
         if embedding_progress is not None:
             embedding_total = self.backend.missing_embedding_count(entries)
             embedding_completed = 0
@@ -79,13 +79,13 @@ class SearchIndexer:
 
         return {"entries": len(entries)}
 
-    def _document_entries(self) -> list[SearchEntry]:
-        entries: list[SearchEntry] = []
+    def _document_entries(self) -> EntryGroups:
+        grouped: EntryGroups = {}
         for section in self.documents.all_sections():
             namespace = namespace_for_document_kind(section.kind)
             if namespace is None:
                 continue
-            entries.append(
+            grouped.setdefault(section.document_id, []).append(
                 SearchEntry(
                     id=f"{namespace}:{section.section_id}",
                     namespace=namespace,
@@ -94,15 +94,14 @@ class SearchIndexer:
                     content_hash=section.content_hash,
                     embedding_profile=self.embedding_profile,
                     token_count=section.token_count,
-                    metadata=dict(section.metadata),
                 )
             )
-        return entries
+        return grouped
 
-    def _hom_entries(self) -> list[SearchEntry]:
+    def _hom_entries(self) -> EntryGroups:
         document_reader = DocumentReader(self.documents)
         page_cache: dict[str, str] = {}
-        entries: list[SearchEntry] = []
+        grouped: EntryGroups = {}
         for record in self.python_documents.all():
             try:
                 canonical = normalize_hom_symbol(record.symbol)
@@ -127,7 +126,7 @@ class SearchIndexer:
                 _signature, text = block
 
             content = _specialized_content(record.symbol, record.signatures, text)
-            entries.append(
+            grouped.setdefault(record.document_id, []).append(
                 SearchEntry(
                     id=f"hom:{record.symbol}",
                     namespace=SearchDomain.HOM.value,
@@ -136,21 +135,14 @@ class SearchIndexer:
                     content_hash=_content_hash(content),
                     embedding_profile=self.embedding_profile,
                     token_count=self.token_counter(text),
-                    metadata={
-                        "document_id": record.document_id,
-                        "symbol": record.symbol,
-                        "parent_symbol": record.parent_symbol,
-                        "member_name": record.member_name,
-                        "member_kind": record.kind,
-                    },
                 )
             )
-        return entries
+        return grouped
 
-    def _vex_entries(self) -> list[SearchEntry]:
+    def _vex_entries(self) -> EntryGroups:
         document_reader = DocumentReader(self.documents)
         page_cache: dict[str, str] = {}
-        entries: list[SearchEntry] = []
+        grouped: EntryGroups = {}
         for record in self.vex_documents.all():
             document = self.documents.document(record.document_id)
             text = page_cache.get(record.document_id)
@@ -167,7 +159,7 @@ class SearchIndexer:
                 record.signatures,
                 readable_text,
             )
-            entries.append(
+            grouped.setdefault(record.document_id, []).append(
                 SearchEntry(
                     id=f"vex:{record.function_name}",
                     namespace=SearchDomain.VEX.value,
@@ -176,13 +168,9 @@ class SearchIndexer:
                     content_hash=_content_hash(content),
                     embedding_profile=self.embedding_profile,
                     token_count=self.token_counter(readable_text),
-                    metadata={
-                        "document_id": record.document_id,
-                        "function": record.function_name,
-                    },
                 )
             )
-        return entries
+        return grouped
 
 
 def _specialized_content(

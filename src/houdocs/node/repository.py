@@ -15,10 +15,9 @@ class NodeRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def replace_all(self, records: Sequence[NodeDocumentRecord]) -> None:
+    def insert_all(self, records: Sequence[NodeDocumentRecord]) -> None:
         try:
             with connect_writable(self.database) as connection:
-                connection.execute("DELETE FROM node_documents")
                 connection.executemany(
                     """
                     INSERT INTO node_documents(node_type, document_id, houdini_name, metadata_json)
@@ -126,10 +125,6 @@ class NodeRepository:
             )
         return ResolvedNodeDocument(document_id=document_id, record=record)
 
-    def count(self) -> int:
-        with connect_readonly(self.database) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM node_documents").fetchone()
-        return int(row[0])
 
 
 def _parameter_override_fields(

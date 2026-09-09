@@ -168,7 +168,7 @@ Unknown:
     assert unresolved["unresolved"]["parameters"][0]["reason"] == "no_houdini_match"
 
 
-def test_node_index_reuses_manual_override_from_unresolved_file(tmp_path: Path) -> None:
+def test_node_index_reuses_manual_override_in_fresh_build(tmp_path: Path) -> None:
     source = tmp_path / "help"
     source.mkdir()
     node_path = source / "nodes" / "sop"
@@ -223,12 +223,27 @@ Legacy Label:
     ]
     unresolved_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    second = indexer.index_all(_runtime_nodes(runtime_rows), houdini_version="22.0.429")
+    from houdocs.node.unresolved import load_overrides
+
+    second_state = tmp_path / "second-state"
+    second_documents = _index_base_documents(source, second_state)
+    second = NodeIndexer(
+        documents=second_documents,
+        repository=NodeRepository(second_state / "docs.db"),
+        docs_directory=second_state / "docs",
+        report_directory=second_state / "reports",
+    ).index_all(
+        _runtime_nodes(runtime_rows),
+        houdini_version="22.0.429",
+        overrides=load_overrides(unresolved_path),
+    )
 
     assert second["parameter_resolved"] == 1
     assert second["parameter_resolved_by_manual"] == 1
     assert second["parameter_unresolved"] == 0
-    persisted = json.loads(unresolved_path.read_text(encoding="utf-8"))
+    persisted = json.loads(
+        Path(str(second["unresolved_file"])).read_text(encoding="utf-8")
+    )
     assert persisted["overrides"]["parameters"][0]["parm_ids"] == ["newname"]
     assert persisted["unresolved"]["parameters"] == []
 
@@ -315,6 +330,7 @@ def test_python_index_builds_direct_symbol_rows_without_body_duplication(
     assert len(json.loads(method["signatures_json"])) == 2
     assert function["kind"] == "function"
     assert "text" not in columns
+    assert "metadata_json" not in columns
 
 
 def test_vex_index_preserves_overloads_context_group_tags_and_status(
@@ -369,6 +385,7 @@ xyzdist(0, P);
     assert json.loads(row["tags_json"]) == ["distance", "geometry"]
     assert row["status"] == "stable"
     assert "text" not in columns
+    assert "metadata_json" not in columns
 
 def test_vex_index_uses_filename_when_real_page_title_is_stale(tmp_path: Path) -> None:
     source = tmp_path / "help"

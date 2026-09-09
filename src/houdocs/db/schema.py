@@ -12,8 +12,7 @@ CREATE TABLE IF NOT EXISTS documents (
     path TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
     kind TEXT NOT NULL,
-    houdini_version TEXT,
-    content_hash TEXT NOT NULL
+    houdini_version TEXT
 );
 
 CREATE INDEX IF NOT EXISTS documents_title_lookup
@@ -52,8 +51,7 @@ CREATE TABLE IF NOT EXISTS python_documents (
     parent_symbol TEXT,
     member_name TEXT,
     kind TEXT NOT NULL,
-    signatures_json TEXT NOT NULL,
-    metadata_json TEXT NOT NULL
+    signatures_json TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS python_documents_document_lookup
@@ -66,8 +64,7 @@ CREATE TABLE IF NOT EXISTS vex_documents (
     contexts_json TEXT NOT NULL,
     group_name TEXT,
     tags_json TEXT NOT NULL,
-    status TEXT,
-    metadata_json TEXT NOT NULL
+    status TEXT
 );
 
 CREATE INDEX IF NOT EXISTS vex_documents_document_lookup

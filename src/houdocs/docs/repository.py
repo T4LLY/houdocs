@@ -14,7 +14,6 @@ from houdocs.errors import HouDocsError
 _SECTION_SELECT = """
     d.id AS source_document_id,
     d.kind AS source_kind,
-    d.path AS source_relative_path,
     s.id AS section_id,
     s.document_id AS section_document_id,
     s.ordinal AS section_ordinal,
@@ -35,22 +34,6 @@ class DocumentRepository:
 
     def _write(self) -> sqlite3.Connection:
         return connect_writable(self.database)
-
-    def document_for_path(self, relative_path: str) -> Document | None:
-        with self._read() as connection:
-            row = connection.execute(
-                "SELECT * FROM documents WHERE path = ?",
-                (relative_path,),
-            ).fetchone()
-        return self._document(row) if row else None
-
-    def section_ids_for_document(self, document_id: str) -> list[str]:
-        with self._read() as connection:
-            rows = connection.execute(
-                "SELECT id FROM sections WHERE document_id = ? ORDER BY ordinal, id",
-                (document_id,),
-            ).fetchall()
-        return [str(row["id"]) for row in rows]
 
     def sections_for_document(self, document_id: str) -> list[DocumentSection]:
         with self._read() as connection:
@@ -142,7 +125,7 @@ class DocumentRepository:
             rows = connection.execute("SELECT * FROM documents ORDER BY path").fetchall()
         return [self._document(row) for row in rows]
 
-    def replace_document(
+    def insert_document(
         self,
         document: Document,
         sections: Sequence[DocumentSection],
@@ -151,14 +134,8 @@ class DocumentRepository:
             with self._write() as connection:
                 connection.execute(
                     """
-                    INSERT INTO documents(id, path, title, kind, houdini_version, content_hash)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        path=excluded.path,
-                        title=excluded.title,
-                        kind=excluded.kind,
-                        houdini_version=excluded.houdini_version,
-                        content_hash=excluded.content_hash
+                    INSERT INTO documents(id, path, title, kind, houdini_version)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         document.document_id,
@@ -166,12 +143,7 @@ class DocumentRepository:
                         document.title,
                         document.kind,
                         document.houdini_version,
-                        document.content_hash,
                     ),
-                )
-                connection.execute(
-                    "DELETE FROM sections WHERE document_id = ?",
-                    (document.document_id,),
                 )
                 connection.executemany(
                     """
@@ -202,18 +174,6 @@ class DocumentRepository:
                 detail=str(exc),
             ) from exc
 
-    def delete_document(self, document_id: str) -> None:
-        try:
-            with self._write() as connection:
-                connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
-                connection.commit()
-        except sqlite3.Error as exc:
-            raise HouDocsError(
-                "docs_database_error",
-                f"Unable to update documentation database: {self.database}",
-                detail=str(exc),
-            ) from exc
-
     @staticmethod
     def _document(row: sqlite3.Row) -> Document:
         return Document(
@@ -222,7 +182,6 @@ class DocumentRepository:
             relative_path=str(row["path"]),
             kind=str(row["kind"]),
             houdini_version=row["houdini_version"],
-            content_hash=str(row["content_hash"]),
         )
 
 
@@ -252,17 +211,6 @@ def _sections_from_joined_rows(rows: Sequence[sqlite3.Row]) -> list[DocumentSect
             section_id = str(row["section_id"])
             document_id = str(row["section_document_id"])
             kind = str(row["source_kind"])
-            relative_path = str(row["source_relative_path"])
-            metadata = {
-                "kind": kind,
-                "document_id": document_id,
-                "relative_path": relative_path,
-                "ordinal": int(row["section_ordinal"]),
-                "anchor": row["section_anchor"],
-                "heading": heading,
-                "heading_path": list(heading_path),
-                "heading_level": level,
-            }
             sections.append(
                 DocumentSection(
                     section_id=section_id,
@@ -276,7 +224,6 @@ def _sections_from_joined_rows(rows: Sequence[sqlite3.Row]) -> list[DocumentSect
                     content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
                     token_count=int(row["section_token_count"]),
                     text=text,
-                    metadata=metadata,
                 )
             )
     return sections

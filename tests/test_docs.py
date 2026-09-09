@@ -33,7 +33,6 @@ def test_cache_bookish_trees_preserves_help_root_priority(tmp_path: Path) -> Non
         "vex/functions/noise.txt",
         "vex/functions/random.txt",
     ]
-    assert cached[0].source_path == high / "vex.zip"
     assert cached[0].cached_path.read_text(encoding="utf-8") == "= High Noise =\n"
 
 
@@ -48,7 +47,6 @@ def test_loose_txt_precedes_archive_member_in_same_root(tmp_path: Path) -> None:
     cached = cache_bookish_trees((source,), tmp_path / "cache")
 
     assert [item.relative_path for item in cached] == ["commands/opadd.txt"]
-    assert cached[0].source_member is None
     assert cached[0].cached_path.read_text(encoding="utf-8") == "= Loose =\n"
 
 
@@ -98,7 +96,6 @@ v@P += noise(v@P);
     assert sections[2].heading_path == ("Geometry", "Parameters")
     assert sections[1].text.startswith("Geometry\nNoise\n")
     assert "v@P += noise(v@P);" in sections[1].text
-    assert sections[1].metadata["bookish"]["context"] == "sop"
 
 
 def test_classify_document_domains() -> None:
@@ -116,21 +113,26 @@ def test_document_indexer_indexes_every_cached_document(tmp_path: Path) -> None:
     source.mkdir()
     document_path = source / "concept.txt"
     document_path.write_text("= Concept =\n\nOne.\n", encoding="utf-8")
-    repository = _repository(tmp_path / "docs.db")
-    indexer = DocumentIndexer(
-        repository=repository,
+    first_repository = _repository(tmp_path / "first.db")
+    first = DocumentIndexer(
+        repository=first_repository,
         parser=BookishDocumentParser(),
-        cache_directory=tmp_path / "cache",
+        cache_directory=tmp_path / "first-cache",
         token_counter=len,
-    )
+    ).index_all(source, houdini_version="22.0.429")
 
-    first = indexer.index_all(source, houdini_version="22.0.429")
     document_path.write_text("= Concept =\n\nTwo.\n", encoding="utf-8")
-    second = indexer.index_all(source, houdini_version="22.0.429")
+    second_repository = _repository(tmp_path / "second.db")
+    second = DocumentIndexer(
+        repository=second_repository,
+        parser=BookishDocumentParser(),
+        cache_directory=tmp_path / "second-cache",
+        token_counter=len,
+    ).index_all(source, houdini_version="22.0.429")
 
     assert first == {"total": 1, "indexed": 1, "failed": 0}
     assert second == {"total": 1, "indexed": 1, "failed": 0}
-    assert "Two." in repository.all_sections()[0].text
+    assert "Two." in second_repository.all_sections()[0].text
 
 
 def test_parse_failure_is_reported_without_partial_document(tmp_path: Path) -> None:
@@ -172,11 +174,15 @@ def test_initialize_docs_database_contains_documents_and_sections_schema(tmp_pat
                 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
             )
         }
+        document_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(documents)")
+        }
         section_columns = {
             row[1]: row
             for row in connection.execute("PRAGMA table_info(sections)")
         }
     assert {"documents", "sections"}.issubset(tables)
+    assert "content_hash" not in document_columns
     assert "token_count" in section_columns
     assert section_columns["token_count"][3] == 1
 

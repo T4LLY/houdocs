@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -10,7 +10,6 @@ class Document:
     relative_path: str
     kind: str
     houdini_version: str | None
-    content_hash: str
 
 
 @dataclass(frozen=True)
@@ -26,4 +25,3 @@ class DocumentSection:
     content_hash: str
     token_count: int
     text: str
-    metadata: dict[str, object] = field(default_factory=dict)

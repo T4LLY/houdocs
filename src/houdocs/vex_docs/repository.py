@@ -14,27 +14,37 @@ class VexRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def replace_all(self, records: Sequence[VexDocumentRecord]) -> None:
+    def insert_all(self, records: Sequence[VexDocumentRecord]) -> None:
         try:
             with connect_writable(self.database) as connection:
-                connection.execute("DELETE FROM vex_documents")
                 connection.executemany(
                     """
                     INSERT INTO vex_documents(
                         function_name, document_id, signatures_json, contexts_json,
-                        group_name, tags_json, status, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        group_name, tags_json, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
                             item.function_name,
                             item.document_id,
-                            json.dumps(list(item.signatures), ensure_ascii=False, separators=(",", ":")),
-                            json.dumps(list(item.contexts), ensure_ascii=False, separators=(",", ":")),
+                            json.dumps(
+                                list(item.signatures),
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
+                            json.dumps(
+                                list(item.contexts),
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
                             item.group_name,
-                            json.dumps(list(item.tags), ensure_ascii=False, separators=(",", ":")),
+                            json.dumps(
+                                list(item.tags),
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
                             item.status,
-                            json.dumps(item.metadata, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
                         )
                         for item in records
                     ],
@@ -46,7 +56,6 @@ class VexRepository:
                 f"Unable to write VEX documentation index: {self.database}",
                 detail=str(exc),
             ) from exc
-
 
     def get(self, function_name: str) -> VexDocumentRecord | None:
         with connect_readonly(self.database) as connection:
@@ -65,11 +74,6 @@ class VexRepository:
             ).fetchall()
         return [self._record(row) for row in rows]
 
-    def count(self) -> int:
-        with connect_readonly(self.database) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM vex_documents").fetchone()
-        return int(row[0])
-
     @staticmethod
     def _record(row: sqlite3.Row) -> VexDocumentRecord:
         return VexDocumentRecord(
@@ -80,5 +84,4 @@ class VexRepository:
             group_name=row["group_name"],
             tags=tuple(json.loads(row["tags_json"] or "[]")),
             status=row["status"],
-            metadata=dict(json.loads(row["metadata_json"] or "{}")),
         )

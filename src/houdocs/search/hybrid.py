@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 import time
 from collections.abc import Callable, Sequence
@@ -26,11 +25,7 @@ class _StoredEntry:
     entry_id: str
     namespace: str
     source_id: str
-    content: str
-    content_hash: str
-    embedding_profile: str
     token_count: int | None
-    metadata: dict[str, object]
 
 
 class HybridSearchBackend:
@@ -73,7 +68,7 @@ class HybridSearchBackend:
         for profile, group in grouped.items():
             vectors_by_profile[profile] = self._ensure_vector_cache(
                 profile,
-                [self._stored_from_entry(entry) for entry in group],
+                group,
                 embedding_progress=embedding_progress,
             )
 
@@ -105,49 +100,35 @@ class HybridSearchBackend:
                 for profile, entry_ids in moved.items():
                     self.dense.remove(profile, entry_ids)
             for entry in entries:
-                metadata_json = json.dumps(
-                    entry.metadata, ensure_ascii=False, sort_keys=True
-                )
+                existing_profile = existing_profiles.get(entry.id)
                 fts_rowid = fts_rowids.get(entry.id)
-                if fts_rowid is None:
-                    # Pre-mapping databases need one compatibility scan before they self-heal.
-                    connection.execute(
-                        "DELETE FROM search_fts WHERE entry_id = ?", (entry.id,)
-                    )
-                else:
+                if existing_profile is not None:
+                    if fts_rowid is None:
+                        raise HouDocsError(
+                            "docs_database_error",
+                            f"Search entry is missing its FTS row mapping: {entry.id}",
+                        )
                     connection.execute(
                         "DELETE FROM search_fts WHERE rowid = ?", (fts_rowid,)
                     )
                 connection.execute(
                     """
                     INSERT INTO search_entries(
-                        entry_id, namespace, source_id, content_hash, embedding_profile_id,
-                        token_count, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        entry_id, namespace, source_id, embedding_profile_id, token_count
+                    ) VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(entry_id) DO UPDATE SET
                         namespace=excluded.namespace,
                         source_id=excluded.source_id,
-                        content_hash=excluded.content_hash,
                         embedding_profile_id=excluded.embedding_profile_id,
-                        token_count=excluded.token_count,
-                        metadata_json=excluded.metadata_json
+                        token_count=excluded.token_count
                     """,
                     (
                         entry.id,
                         entry.namespace,
                         entry.source_id,
-                        entry.content_hash,
                         entry.embedding_profile,
                         entry.token_count,
-                        metadata_json,
                     ),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO search_content(entry_id, content) VALUES (?, ?)
-                    ON CONFLICT(entry_id) DO UPDATE SET content=excluded.content
-                    """,
-                    (entry.id, entry.content),
                 )
                 connection.execute(
                     "INSERT INTO search_fts(entry_id, namespace, content) VALUES (?, ?, ?)",
@@ -174,63 +155,6 @@ class HybridSearchBackend:
             cached = self._cached_hashes(profile, sorted(content_hashes))
             missing += len(content_hashes - cached)
         return missing
-
-    def entry_ids(self, namespace: str) -> list[str]:
-        with self._read() as connection:
-            rows = connection.execute(
-                "SELECT entry_id FROM search_entries WHERE namespace = ? ORDER BY entry_id",
-                (namespace,),
-            ).fetchall()
-        return [str(row["entry_id"]) for row in rows]
-
-    def remove(self, entry_ids: Sequence[str]) -> None:
-        if not entry_ids:
-            return
-        with self._write() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            profiles = self._profiles_for_entry_ids_in_connection(connection, entry_ids)
-            fts_rowids = self._fts_rowids_for_entry_ids_in_connection(
-                connection, entry_ids
-            )
-            grouped: dict[str, list[str]] = {}
-            for entry_id, profile in profiles.items():
-                grouped.setdefault(profile, []).append(entry_id)
-
-            if isinstance(self.dense, SQLiteVecIndex):
-                for profile, ids in grouped.items():
-                    try:
-                        self.dense.remove_in_transaction(connection, profile, ids)
-                    except HouDocsError as exc:
-                        if exc.error.code != "dense_profile_missing":
-                            raise
-            else:
-                for profile, ids in grouped.items():
-                    try:
-                        self.dense.remove(profile, ids)
-                    except HouDocsError as exc:
-                        if exc.error.code != "dense_profile_missing":
-                            raise
-
-            for entry_id in entry_ids:
-                fts_rowid = fts_rowids.get(entry_id)
-                if fts_rowid is None:
-                    connection.execute(
-                        "DELETE FROM search_fts WHERE entry_id = ?", (entry_id,)
-                    )
-                else:
-                    connection.execute(
-                        "DELETE FROM search_fts WHERE rowid = ?", (fts_rowid,)
-                    )
-                connection.execute(
-                    "DELETE FROM search_fts_rows WHERE entry_id = ?", (entry_id,)
-                )
-                connection.execute(
-                    "DELETE FROM search_content WHERE entry_id = ?", (entry_id,)
-                )
-                connection.execute(
-                    "DELETE FROM search_entries WHERE entry_id = ?", (entry_id,)
-                )
-            connection.commit()
 
     def search(
         self,
@@ -269,13 +193,6 @@ class HybridSearchBackend:
         scores = reciprocal_rank_fusion([*dense_rankings, lexical], k=self.rrf_k)
         if not scores:
             return []
-        dense_ranks: dict[str, int] = {}
-        for dense in dense_rankings:
-            for rank, entry_id in enumerate(dense, start=1):
-                dense_ranks.setdefault(entry_id, rank)
-        lexical_ranks = {
-            entry_id: rank for rank, entry_id in enumerate(lexical, start=1)
-        }
         by_id = self._load_entries(list(scores))
         ranked = sorted(
             (entry_id for entry_id in scores if entry_id in by_id),
@@ -283,14 +200,10 @@ class HybridSearchBackend:
         )[:top_k]
         return [
             SearchHit(
-                id=entry_id,
                 namespace=by_id[entry_id].namespace,
                 source_id=by_id[entry_id].source_id,
                 score=scores[entry_id],
-                metadata=by_id[entry_id].metadata,
                 token_count=by_id[entry_id].token_count,
-                lexical_rank=lexical_ranks.get(entry_id),
-                dense_rank=dense_ranks.get(entry_id),
             )
             for entry_id in ranked
         ]
@@ -311,10 +224,6 @@ class HybridSearchBackend:
             ).fetchall()
         return [str(row["embedding_profile_id"]) for row in rows]
 
-    def _profiles_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, str]:
-        with self._read() as connection:
-            return self._profiles_for_entry_ids_in_connection(connection, entry_ids)
-
     def _profiles_for_entry_ids_in_connection(
         self,
         connection: sqlite3.Connection,
@@ -334,10 +243,6 @@ class HybridSearchBackend:
                 {str(row["entry_id"]): str(row["embedding_profile_id"]) for row in rows}
             )
         return found
-
-    def _fts_rowids_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, int]:
-        with self._read() as connection:
-            return self._fts_rowids_for_entry_ids_in_connection(connection, entry_ids)
 
     def _fts_rowids_for_entry_ids_in_connection(
         self,
@@ -367,9 +272,9 @@ class HybridSearchBackend:
             with self._read() as connection:
                 rows = connection.execute(
                     f"""
-                    SELECT se.*, sc.content
-                    FROM search_entries se JOIN search_content sc ON sc.entry_id = se.entry_id
-                    WHERE se.entry_id IN ({placeholders})
+                    SELECT entry_id, namespace, source_id, token_count
+                    FROM search_entries
+                    WHERE entry_id IN ({placeholders})
                     """,
                     tuple(batch),
                 ).fetchall()
@@ -384,7 +289,7 @@ class HybridSearchBackend:
     def _ensure_vector_cache(
         self,
         profile: str,
-        entries: Sequence[_StoredEntry],
+        entries: Sequence[SearchEntry],
         *,
         embedding_progress: Callable[[int, float], None] | None = None,
     ) -> dict[str, np.ndarray]:
@@ -477,38 +382,12 @@ class HybridSearchBackend:
         return found
 
     @staticmethod
-    def _stored_from_entry(entry: SearchEntry) -> _StoredEntry:
-        return _StoredEntry(
-            entry_id=entry.id,
-            namespace=entry.namespace,
-            source_id=entry.source_id,
-            content=entry.content,
-            content_hash=entry.content_hash,
-            embedding_profile=entry.embedding_profile,
-            token_count=entry.token_count,
-            metadata=dict(entry.metadata),
-        )
-
-    @staticmethod
     def _row_to_stored(row: sqlite3.Row) -> _StoredEntry:
-        raw_metadata = row["metadata_json"] or "{}"
-        try:
-            metadata = json.loads(raw_metadata)
-        except json.JSONDecodeError as exc:
-            raise HouDocsError(
-                "docs_database_error",
-                f"Corrupt metadata_json in search_entries for entry {row['entry_id']!r}.",
-                detail=str(exc),
-            ) from exc
         return _StoredEntry(
             entry_id=str(row["entry_id"]),
             namespace=str(row["namespace"]),
             source_id=str(row["source_id"]),
-            content=str(row["content"]),
-            content_hash=str(row["content_hash"]),
-            embedding_profile=str(row["embedding_profile_id"]),
             token_count=(
                 int(row["token_count"]) if row["token_count"] is not None else None
             ),
-            metadata=metadata,
         )

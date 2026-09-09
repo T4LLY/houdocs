@@ -52,7 +52,6 @@ class BookishDocumentParser:
         kind: str,
     ) -> list[DocumentSection]:
         lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        page_properties = self._page_properties(lines)
         heading_stack: list[str | None] = [None] * 6
         current: _SectionBuilder | None = None
         sections: list[DocumentSection] = []
@@ -79,7 +78,6 @@ class BookishDocumentParser:
                 kind=kind,
                 builder=builder,
                 text=text,
-                page_properties=page_properties,
             )
             base_id = section.section_id
             if base_id in used_section_ids:
@@ -190,7 +188,6 @@ class BookishDocumentParser:
         kind: str,
         builder: _SectionBuilder,
         text: str,
-        page_properties: dict[str, str],
     ) -> DocumentSection:
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         anchor = builder.anchor.strip() if builder.anchor else None
@@ -213,23 +210,7 @@ class BookishDocumentParser:
             content_hash=content_hash,
             token_count=_estimate_tokens(text),
             text=text,
-            metadata={"bookish": dict(page_properties)},
         )
-
-    @staticmethod
-    def _page_properties(lines: list[str]) -> dict[str, str]:
-        properties: dict[str, str] = {}
-        for line in lines:
-            heading_match = _HEADING_RE.match(line.rstrip())
-            if heading_match and len(heading_match.group("marks")) >= 2:
-                break
-            at_match = _AT_SECTION_RE.match(line.rstrip())
-            if at_match and at_match.group("name").casefold() in _AT_SECTIONS:
-                break
-            match = _PROPERTY_RE.match(line.rstrip())
-            if match and match.group("name") != "id":
-                properties[match.group("name")] = match.group("value").strip()
-        return properties
 
     @staticmethod
     def _normalize_body(lines: list[str]) -> str:

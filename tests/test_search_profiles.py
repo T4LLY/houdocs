@@ -46,13 +46,12 @@ def test_search_fuses_dense_candidates_from_all_current_profiles(
         dense_index=ProfileDense(),
     )
     backend.upsert(
-        [SearchEntry("p1-entry", "docs", "source", "alpha one", "hash-1", "p1", 1, {})]
+        [SearchEntry("p1-entry", "docs", "p1-source", "alpha one", "hash-1", "p1", 1)]
     )
     backend.upsert(
-        [SearchEntry("p2-entry", "docs", "source", "alpha two", "hash-2", "p2", 1, {})]
+        [SearchEntry("p2-entry", "docs", "p2-source", "alpha two", "hash-2", "p2", 1)]
     )
 
     hits = backend.search("alpha", namespaces=["docs"], top_k=2)
 
-    assert {hit.id for hit in hits} == {"p1-entry", "p2-entry"}
-    assert all(hit.dense_rank is not None for hit in hits)
+    assert {hit.source_id for hit in hits} == {"p1-source", "p2-source"}

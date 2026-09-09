@@ -358,19 +358,18 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
 def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -> None:
     database = tmp_path / "docs.db"
     documents = _repository(database)
-    documents.replace_document(
+    documents.insert_document(
         Document(
             "node-doc",
             "Example",
             "nodes/sop/example.txt",
             "node-doc",
             "22.0.429",
-            "Example body",
         ),
         [],
     )
     repository = NodeRepository(database)
-    repository.replace_all(
+    repository.insert_all(
         [
             NodeDocumentRecord(
                 node_type=NodeTypeDocument(
@@ -542,18 +541,18 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
 ) -> None:
     database = tmp_path / "docs.db"
     documents = _repository(database)
-    documents.replace_document(
-        Document("lower", "Lower", "nodes/sop/foo.txt", "node", "22.0.429", "lower"),
+    documents.insert_document(
+        Document("lower", "Lower", "nodes/sop/foo.txt", "node", "22.0.429"),
         [],
     )
-    documents.replace_document(
+    documents.insert_document(
         Document(
-            "higher", "Higher", "nodes/sop/foo-2.txt", "node", "22.0.429", "higher"
+            "higher", "Higher", "nodes/sop/foo-2.txt", "node", "22.0.429"
         ),
         [],
     )
     repository = NodeRepository(database)
-    repository.replace_all(
+    repository.insert_all(
         [
             NodeDocumentRecord(
                 node_type=NodeTypeDocument(
@@ -613,12 +612,12 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
 def test_node_repository_rejects_invalid_serialized_metadata(tmp_path: Path) -> None:
     database = tmp_path / "docs.db"
     documents = _repository(database)
-    documents.replace_document(
-        Document("doc", "Example", "nodes/sop/example.txt", "node", "22.0.429", "body"),
+    documents.insert_document(
+        Document("doc", "Example", "nodes/sop/example.txt", "node", "22.0.429"),
         [],
     )
     repository = NodeRepository(database)
-    repository.replace_all(
+    repository.insert_all(
         [
             NodeDocumentRecord(
                 node_type=NodeTypeDocument(

@@ -54,9 +54,6 @@ class FakeDense:
 class TransactionalDense(SQLiteVecIndex):
     """SQLite-backed test double that participates in the caller transaction."""
 
-    def upsert(self, profile, entries, vectors_by_hash):
-        raise AssertionError("transactional dense writes must use the caller connection")
-
     def upsert_in_transaction(self, connection, profile, entries, vectors_by_hash):
         del vectors_by_hash
         connection.execute(
@@ -77,9 +74,6 @@ class TransactionalDense(SQLiteVecIndex):
             "INSERT INTO test_dense_vectors(embedding_profile_id, entry_id, namespace) VALUES (?, ?, ?)",
             [(profile, entry.id, entry.namespace) for entry in entries],
         )
-
-    def remove(self, profile, entry_ids):
-        raise AssertionError("transactional dense writes must use the caller connection")
 
     def remove_in_transaction(self, connection, profile, entry_ids):
         connection.executemany(
@@ -126,8 +120,26 @@ def _section(
         content_hash=hashlib.sha256(text.encode()).hexdigest(),
         token_count=10,
         text=text,
-        metadata={"kind": "concept", "heading_path": ["Page", heading]},
     )
+
+
+def test_search_schema_keeps_only_live_index_state(tmp_path: Path) -> None:
+    database = tmp_path / "search.db"
+    initialize_search_database(database)
+    with sqlite3.connect(database) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        entry_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(search_entries)")
+        }
+
+    assert "search_content" not in tables
+    assert "content_hash" not in entry_columns
+    assert "metadata_json" not in entry_columns
 
 
 def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
@@ -140,9 +152,8 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
         relative_path="page.txt",
         kind="concept",
         houdini_version="22.0.429",
-        content_hash="document-hash",
     )
-    docs.replace_document(
+    docs.insert_document(
         document,
         [
             _section("doc", 0, "Alpha", "alpha geometry"),
@@ -178,8 +189,8 @@ def test_search_indexer_indexes_all_entries_each_run(
     tmp_path: Path,
 ) -> None:
     docs = _docs(tmp_path / "docs.db")
-    document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
-    docs.replace_document(document, [_section("doc", 0, "Alpha", "alpha")])
+    document = Document("doc", "Page", "page.txt", "concept", "22.0.429")
+    docs.insert_document(document, [_section("doc", 0, "Alpha", "alpha")])
     dense = FakeDense()
     backend = _backend(
         database=tmp_path / "search.db",
@@ -212,8 +223,8 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             raise RuntimeError("embedding service unavailable")
 
     docs = _docs(tmp_path / "docs.db")
-    docs.replace_document(
-        Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
+    docs.insert_document(
+        Document("doc", "Page", "page.txt", "concept", "22.0.429"),
         [_section("doc", 0, "Alpha", "alpha")],
     )
     database = tmp_path / "search.db"
@@ -231,7 +242,8 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             token_counter=_test_token_count,
         ).index_all()
 
-    assert failed_backend.entry_ids("document") == []
+    with failed_backend._read() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM search_entries").fetchone()[0] == 0
 
     dense = FakeDense()
     retry = SearchIndexer(
@@ -256,7 +268,7 @@ def test_search_fts_rows_track_entry_rowids_for_repeated_upserts(tmp_path: Path)
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
     )
-    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})
+    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1)
 
     backend.upsert([entry])
     backend.upsert([entry])
@@ -276,7 +288,11 @@ def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = tmp_path / "search.db"
-    backend = _backend(database=database, embeddings=FakeEmbeddings())
+    backend = _backend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=TransactionalDense(database),
+    )
     original_connect = backend._write
 
     monkeypatch.setattr(
@@ -291,17 +307,19 @@ def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
 
     with pytest.raises(sqlite3.OperationalError, match="forced entry write failure"):
         backend.upsert(
-            [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
+            [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1)]
         )
 
     with original_connect() as connection:
-        profiles = connection.execute("SELECT * FROM search_vector_profiles").fetchall()
+        dense_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_dense_vectors'"
+        ).fetchone()
         entries = connection.execute("SELECT * FROM search_entries").fetchall()
-    assert profiles == []
+    assert dense_table is None
     assert entries == []
 
 
-def test_search_profile_move_rolls_back_dense_and_metadata_together(
+def test_search_profile_move_rolls_back_dense_and_entry_state_together(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = tmp_path / "search.db"
@@ -311,7 +329,7 @@ def test_search_profile_move_rolls_back_dense_and_metadata_together(
         dense_index=TransactionalDense(database),
     )
     backend.upsert(
-        [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
+        [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1)]
     )
     original_connect = backend._write
 
@@ -329,7 +347,7 @@ def test_search_profile_move_rolls_back_dense_and_metadata_together(
         backend.upsert(
             [
                 SearchEntry(
-                    "entry", "docs", "source", "alpha", "hash", "p2", 1, {}
+                    "entry", "docs", "source", "alpha", "hash", "p2", 1
                 )
             ]
         )
@@ -352,55 +370,6 @@ def test_search_profile_move_rolls_back_dense_and_metadata_together(
     assert cached_p2 == 1
 
 
-def test_search_remove_rolls_back_dense_and_metadata_together(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    database = tmp_path / "search.db"
-    backend = _backend(
-        database=database,
-        embeddings=FakeEmbeddings(),
-        dense_index=TransactionalDense(database),
-    )
-    backend.upsert(
-        [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
-    )
-    original_connect = backend._write
-
-    monkeypatch.setattr(
-        backend,
-        "_write",
-        lambda: FailingConnection(
-            original_connect(),
-            sql_fragment="DELETE FROM search_entries",
-            message="forced entry delete failure",
-        ),
-    )
-
-    with pytest.raises(sqlite3.OperationalError, match="forced entry delete failure"):
-        backend.remove(["entry"])
-
-    with original_connect() as connection:
-        dense_rows = connection.execute(
-            "SELECT embedding_profile_id, entry_id FROM test_dense_vectors"
-        ).fetchall()
-        stored = connection.execute(
-            "SELECT embedding_profile_id FROM search_entries WHERE entry_id = 'entry'"
-        ).fetchone()
-        content = connection.execute(
-            "SELECT content FROM search_content WHERE entry_id = 'entry'"
-        ).fetchone()
-        fts_rows = connection.execute(
-            "SELECT COUNT(*) FROM search_fts WHERE entry_id = 'entry'"
-        ).fetchone()[0]
-
-    assert [(row["embedding_profile_id"], row["entry_id"]) for row in dense_rows] == [
-        ("p1", "entry")
-    ]
-    assert stored["embedding_profile_id"] == "p1"
-    assert content["content"] == "alpha"
-    assert fts_rows == 1
-
-
 def test_search_skips_stale_hits_without_aborting_current_results(
     tmp_path: Path,
 ) -> None:
@@ -408,13 +377,13 @@ def test_search_skips_stale_hits_without_aborting_current_results(
         def search(self, query, *, namespaces, top_k):
             del query, namespaces, top_k
             return [
-                SearchHit("stale", "document", "missing", 1.0, {}, token_count=5),
-                SearchHit("current", "document", "doc#0", 0.5, {}, token_count=10),
+                SearchHit("document", "missing", 1.0, token_count=5),
+                SearchHit("document", "doc#0", 0.5, token_count=10),
             ]
 
     docs = _docs(tmp_path / "docs.db")
-    docs.replace_document(
-        Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
+    docs.insert_document(
+        Document("doc", "Page", "page.txt", "concept", "22.0.429"),
         [_section("doc", 0, "Alpha", "alpha")],
     )
 
@@ -442,12 +411,12 @@ def test_search_index_reuses_embedding_for_duplicate_content_hashes(
             )
 
     docs = _docs(tmp_path / "docs.db")
-    docs.replace_document(
-        Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
+    docs.insert_document(
+        Document("doc-a", "A", "a.txt", "concept", "22.0.429"),
         [_section("doc-a", 0, "A", "shared content")],
     )
-    docs.replace_document(
-        Document("doc-b", "B", "b.txt", "concept", "22.0.429", "hb"),
+    docs.insert_document(
+        Document("doc-b", "B", "b.txt", "concept", "22.0.429"),
         [_section("doc-b", 0, "B", "shared content")],
     )
     embeddings = RecordingEmbeddings()
@@ -484,15 +453,15 @@ def test_search_index_embeds_entries_per_document(tmp_path: Path) -> None:
             )
 
     docs = _docs(tmp_path / "docs.db")
-    docs.replace_document(
-        Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
+    docs.insert_document(
+        Document("doc-a", "A", "a.txt", "concept", "22.0.429"),
         [
             _section("doc-a", 0, "A1", "alpha one"),
             _section("doc-a", 1, "A2", "alpha two"),
         ],
     )
-    docs.replace_document(
-        Document("doc-b", "B", "b.txt", "concept", "22.0.429", "hb"),
+    docs.insert_document(
+        Document("doc-b", "B", "b.txt", "concept", "22.0.429"),
         [
             _section("doc-b", 0, "B1", "beta one"),
             _section("doc-b", 1, "B2", "beta two"),
@@ -534,15 +503,10 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
             connection.execute(
                 """
                 INSERT INTO search_entries(
-                    entry_id, namespace, source_id, content_hash,
-                    embedding_profile_id, token_count, metadata_json
-                ) VALUES (?, 'docs', ?, ?, 'profile', 1, '{}')
+                    entry_id, namespace, source_id, embedding_profile_id, token_count
+                ) VALUES (?, 'docs', ?, 'profile', 1)
                 """,
-                (entry_id, entry_id, f"hash-{entry_id}"),
-            )
-            connection.execute(
-                "INSERT INTO search_content(entry_id, content) VALUES (?, ?)",
-                (entry_id, f"content-{entry_id}"),
+                (entry_id, entry_id),
             )
         connection.commit()
 
@@ -568,7 +532,8 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
 
     monkeypatch.setattr(backend, "_read", lambda: GuardedConnection())
 
-    profiles = backend._profiles_for_entry_ids(entry_ids)
+    with backend._read() as connection:
+        profiles = backend._profiles_for_entry_ids_in_connection(connection, entry_ids)
     loaded = backend._load_entries(entry_ids)
 
     assert profiles == {entry_id: "profile" for entry_id in entry_ids}
@@ -584,29 +549,21 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
 
     database = tmp_path / "docs.db"
     docs = _docs(database)
-    docs.replace_document(
-        Document("concept", "Overview", "overview.txt", "concept", "22.0.429", "hc"),
+    docs.insert_document(
+        Document("concept", "Overview", "overview.txt", "concept", "22.0.429"),
         [_section("concept", 0, "Overview", "general documentation")],
     )
     node_section = _section("node", 0, "Copy to Points", "copy geometry to points")
     node_section = DocumentSection(
-        **{
-            **node_section.__dict__,
-            "kind": "node-doc",
-            "metadata": {
-                "kind": "node-doc",
-                "heading_path": ["Page", "Copy to Points"],
-            },
-        }
+        **{**node_section.__dict__, "kind": "node-doc"}
     )
-    docs.replace_document(
+    docs.insert_document(
         Document(
             "node",
             "Copy to Points",
             "nodes/sop/copytopoints.txt",
             "node-doc",
             "22.0.429",
-            "hn",
         ),
         [node_section],
     )
@@ -614,38 +571,26 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         "hou.Node\n\n::`setInput(self, input_index, node)`:\n    Connect another node."
     )
     hom_section = _section("hom", 0, "hou.Node", hom_text)
-    hom_section = DocumentSection(
-        **{
-            **hom_section.__dict__,
-            "kind": "hom",
-            "metadata": {"kind": "hom", "heading_path": ["hou.Node"]},
-        }
-    )
-    docs.replace_document(
-        Document("hom", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
+    hom_section = DocumentSection(**{**hom_section.__dict__, "kind": "hom"})
+    docs.insert_document(
+        Document("hom", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429"),
         [hom_section],
     )
     vex_section = _section(
         "vex", 0, "xyzdist", "xyzdist finds the nearest surface point"
     )
-    vex_section = DocumentSection(
-        **{
-            **vex_section.__dict__,
-            "kind": "vex",
-            "metadata": {"kind": "vex", "heading_path": ["xyzdist"]},
-        }
-    )
-    docs.replace_document(
+    vex_section = DocumentSection(**{**vex_section.__dict__, "kind": "vex"})
+    docs.insert_document(
         Document(
-            "vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"
+            "vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429"
         ),
         [vex_section],
     )
 
     hom = PythonRepository(database)
-    hom.replace_all(
+    hom.insert_all(
         [
-            PythonDocumentRecord("hou.Node", "hom", "hou", "Node", "class", (), {}),
+            PythonDocumentRecord("hou.Node", "hom", "hou", "Node", "class", ()),
             PythonDocumentRecord(
                 "hou.Node.setInput",
                 "hom",
@@ -653,7 +598,6 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
                 "setInput",
                 "method",
                 ("setInput(self, input_index, node)",),
-                {},
             ),
             PythonDocumentRecord(
                 "hou.Node.missing",
@@ -662,12 +606,11 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
                 "missing",
                 "method",
                 ("missing()",),
-                {},
             ),
         ]
     )
     vex = VexRepository(database)
-    vex.replace_all(
+    vex.insert_all(
         [
             VexDocumentRecord(
                 "xyzdist",
@@ -677,7 +620,6 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
                 "geometry",
                 (),
                 None,
-                {},
             )
         ]
     )
@@ -697,19 +639,26 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     ).index_all()
 
     assert result["entries"] == 5
-    assert backend.entry_ids("document") == ["document:concept#0"]
-    assert backend.entry_ids("node") == ["node:node#0"]
-    assert backend.entry_ids("hom") == ["hom:hou.Node", "hom:hou.Node.setInput"]
-    assert backend.entry_ids("vex") == ["vex:xyzdist"]
-
     with backend._read() as connection:
+        entry_rows = connection.execute(
+            "SELECT namespace, entry_id FROM search_entries ORDER BY namespace, entry_id"
+        ).fetchall()
         hom_member = connection.execute(
-            "SELECT content FROM search_content WHERE entry_id = ?",
+            "SELECT content FROM search_fts WHERE entry_id = ?",
             ("hom:hou.Node.setInput",),
         ).fetchone()
         token_rows = connection.execute(
             "SELECT entry_id, token_count FROM search_entries ORDER BY entry_id"
         ).fetchall()
+    by_namespace: dict[str, list[str]] = {}
+    for row in entry_rows:
+        by_namespace.setdefault(str(row["namespace"]), []).append(str(row["entry_id"]))
+    assert by_namespace == {
+        "document": ["document:concept#0"],
+        "hom": ["hom:hou.Node", "hom:hou.Node.setInput"],
+        "node": ["node:node#0"],
+        "vex": ["vex:xyzdist"],
+    }
     assert hom_member is not None
     assert "hou.Node.setInput" in hom_member["content"]
     assert "Connect another node." in hom_member["content"]
@@ -739,16 +688,14 @@ def test_search_output_collapses_document_heading_metadata_to_path(
         content_hash="hash",
         token_count=10,
         text="inputs",
-        metadata={},
     )
-    docs.replace_document(
+    docs.insert_document(
         Document(
             "doc",
             "Copy to Points",
             "nodes/sop/copytopoints.txt",
             "node-doc",
             "22.0.429",
-            "h",
         ),
         [section],
     )
@@ -756,7 +703,7 @@ def test_search_output_collapses_document_heading_metadata_to_path(
     class OneHitBackend:
         def search(self, query, *, namespaces, top_k):
             del query, namespaces, top_k
-            return [SearchHit("node:doc#0", "node", "doc#0", 1.0, {}, token_count=12)]
+            return [SearchHit("node", "doc#0", 1.0, token_count=12)]
 
     result = DocumentSearchService(repository=docs, backend=OneHitBackend()).search(
         "copy to points"
@@ -782,18 +729,18 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
 
     database = tmp_path / "docs.db"
     docs = _docs(database)
-    docs.replace_document(
-        Document("hom-doc", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
+    docs.insert_document(
+        Document("hom-doc", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429"),
         [],
     )
-    docs.replace_document(
+    docs.insert_document(
         Document(
-            "vex-doc", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429", "hv"
+            "vex-doc", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429"
         ),
         [],
     )
     hom = PythonRepository(database)
-    hom.replace_all(
+    hom.insert_all(
         [
             PythonDocumentRecord(
                 "hou.Node.setInput",
@@ -802,12 +749,11 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
                 "setInput",
                 "method",
                 ("setInput(self, input_index, node)",),
-                {},
             )
         ]
     )
     vex = VexRepository(database)
-    vex.replace_all(
+    vex.insert_all(
         [
             VexDocumentRecord(
                 "xyzdist",
@@ -817,7 +763,6 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
                 "geometry",
                 (),
                 None,
-                {},
             )
         ]
     )
@@ -836,11 +781,9 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
         vex_repository=vex,
         backend=SpecializedBackend(
             SearchHit(
-                "hom:hou.Node.setInput",
                 "hom",
                 "hou.Node.setInput",
                 1.0,
-                {},
                 token_count=13,
             )
         ),
@@ -850,7 +793,7 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
         python_repository=hom,
         vex_repository=vex,
         backend=SpecializedBackend(
-            SearchHit("vex:xyzdist", "vex", "xyzdist", 1.0, {}, token_count=14)
+            SearchHit("vex", "xyzdist", 1.0, token_count=14)
         ),
     ).search("nearest surface")
 
@@ -862,7 +805,7 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
     assert vex_result["hits"][0]["tokens"] == 14
 
 
-def test_load_entries_raises_on_corrupt_metadata_json(tmp_path: Path) -> None:
+def test_existing_search_entry_without_fts_mapping_fails_closed(tmp_path: Path) -> None:
     from houdocs.db.connection import connect_writable
     from houdocs.errors import HouDocsError
 
@@ -872,20 +815,16 @@ def test_load_entries_raises_on_corrupt_metadata_json(tmp_path: Path) -> None:
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
     )
-    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})
+    entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1)
     backend.upsert([entry])
 
     with connect_writable(database) as connection:
-        connection.execute(
-            "UPDATE search_entries SET metadata_json = ? WHERE entry_id = ?",
-            ("not valid json{", "entry"),
-        )
+        connection.execute("DELETE FROM search_fts_rows WHERE entry_id = ?", ("entry",))
         connection.commit()
 
-    with pytest.raises(HouDocsError, match="Corrupt metadata_json") as exc_info:
-        backend._load_entries(["entry"])
+    with pytest.raises(HouDocsError, match="missing its FTS row mapping") as exc_info:
+        backend.upsert([entry])
     assert exc_info.value.error.code == "docs_database_error"
-    assert exc_info.value.error.detail is not None
 
 
 def test_fts_operational_error_propagates(tmp_path: Path) -> None:

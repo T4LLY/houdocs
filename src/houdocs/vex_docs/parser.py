@@ -25,7 +25,6 @@ def parse_vex_document(document: Document, source: str) -> VexDocumentRecord | N
         group_name=properties.get("group") or None,
         tags=_split_values(properties.get("tags")),
         status=properties.get("status") or None,
-        metadata={"reference_type": "vex"},
     )
 
 

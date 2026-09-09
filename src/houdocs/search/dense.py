@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from houdocs.db.connection import connect_readonly, connect_writable
+from houdocs.db.connection import connect_readonly
 from houdocs.errors import HouDocsError
 from houdocs.search.models import SearchEntry
 
@@ -46,23 +46,6 @@ class SQLiteVecIndex:
         connection = connect_readonly(self.database)
         load_sqlite_vec(connection)
         return connection
-
-    def _write(self) -> sqlite3.Connection:
-        connection = connect_writable(self.database)
-        load_sqlite_vec(connection)
-        return connection
-
-    def upsert(
-        self,
-        profile: str,
-        entries: Sequence[SearchEntry],
-        vectors_by_hash: Mapping[str, np.ndarray],
-    ) -> None:
-        if not entries:
-            return
-        with self._write() as connection:
-            self.upsert_in_transaction(connection, profile, entries, vectors_by_hash)
-            connection.commit()
 
     def upsert_in_transaction(
         self,
@@ -106,13 +89,6 @@ class SQLiteVecIndex:
             f'INSERT INTO "{table_name}"(entry_id, embedding, namespace) VALUES (?, ?, ?)',
             rows,
         )
-
-    def remove(self, profile: str, entry_ids: Sequence[str]) -> None:
-        if not entry_ids:
-            return
-        with self._write() as connection:
-            self.remove_in_transaction(connection, profile, entry_ids)
-            connection.commit()
 
     def remove_in_transaction(
         self,
@@ -159,14 +135,6 @@ class SQLiteVecIndex:
                 detail=str(exc),
             ) from exc
         return [str(row["entry_id"]) for row in rows]
-
-    def _ensure_profile(self, profile: str, dimensions: int) -> str:
-        with self._write() as connection:
-            table_name = self._ensure_profile_in_transaction(
-                connection, profile, dimensions
-            )
-            connection.commit()
-        return table_name
 
     def _ensure_profile_in_transaction(
         self,

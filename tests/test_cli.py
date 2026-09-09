@@ -578,18 +578,17 @@ def test_node_command_lists_token_costs_and_reads_detail(
     paths = VersionPaths.for_version("22.0.429")
     paths.ensure()
     documents = _docs_repository(paths.database)
-    documents.replace_document(
+    documents.insert_document(
         Document(
             "node-doc",
             "Example",
             "nodes/sop/example.txt",
             "node-doc",
             "22.0.429",
-            "Example body",
         ),
         [],
     )
-    NodeRepository(paths.database).replace_all(
+    NodeRepository(paths.database).insert_all(
         [
             NodeDocumentRecord(
                 node_type=NodeTypeDocument(

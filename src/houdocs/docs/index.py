@@ -90,9 +90,8 @@ class DocumentIndexer:
                 relative_path=item.relative_path,
                 kind=kind,
                 houdini_version=houdini_version,
-                content_hash=item.content_hash,
             )
-            self.repository.replace_document(document, sections)
+            self.repository.insert_document(document, sections)
             indexed += 1
             if progress is not None:
                 progress(position, total)
@@ -116,43 +115,9 @@ class DocumentIndexer:
             kind=kind,
         )
         return [
-            self._with_metadata(
-                replace(section, token_count=self.token_counter(section.text)),
-                item.relative_path,
-            )
+            replace(section, token_count=self.token_counter(section.text))
             for section in sections
         ]
-
-    @staticmethod
-    def _with_metadata(
-        section: DocumentSection,
-        relative_path: str,
-    ) -> DocumentSection:
-        metadata = {
-            **section.metadata,
-            "kind": section.kind,
-            "document_id": section.document_id,
-            "relative_path": relative_path,
-            "ordinal": section.ordinal,
-            "anchor": section.anchor,
-            "heading": section.heading,
-            "heading_path": list(section.heading_path),
-            "heading_level": section.heading_level,
-        }
-        return DocumentSection(
-            section_id=section.section_id,
-            document_id=section.document_id,
-            ordinal=section.ordinal,
-            anchor=section.anchor,
-            heading=section.heading,
-            heading_path=section.heading_path,
-            heading_level=section.heading_level,
-            kind=section.kind,
-            content_hash=section.content_hash,
-            token_count=section.token_count,
-            text=section.text,
-            metadata=metadata,
-        )
 
     @staticmethod
     def _document_title(

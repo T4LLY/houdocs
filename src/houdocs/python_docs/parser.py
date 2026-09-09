@@ -42,7 +42,6 @@ def parse_python_document(
             member_name=own_name,
             kind=kind,
             signatures=own_signatures,
-            metadata={"reference_type": reference_type},
         )
     )
 
@@ -57,7 +56,6 @@ def parse_python_document(
                     member_name=member_name,
                     kind=member_kind,
                     signatures=tuple(signatures),
-                    metadata={"reference_type": reference_type},
                 )
             )
     return records

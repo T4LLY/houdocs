@@ -45,5 +45,5 @@ class VexIndexer:
                 emit_specialized_issue(on_warning, "vex_function_duplicate", "Duplicate VEX function; keeping first indexed document.", document.relative_path, record.function_name)
                 continue
             by_function[record.function_name] = record
-        self.repository.replace_all(list(by_function.values()))
+        self.repository.insert_all(list(by_function.values()))
         return {"documents": documents, "functions": len(by_function), "duplicates": duplicates, "failed": failed}

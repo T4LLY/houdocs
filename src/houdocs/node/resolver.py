@@ -38,7 +38,6 @@ class NodeTypeCatalog:
             ): node
             for node in nodes
         }
-        self._canonical = {_normalize_key(node.canonical_name): node for node in nodes}
 
     def resolve(self, lookup: NodeTypeLookup) -> RuntimeNodeType | None:
         return self._nodes.get(
@@ -54,12 +53,6 @@ class NodeTypeCatalog:
             return None
         return f"{category}/{lookup.internal_name}"
 
-    def runtime_for_canonical(
-        self, canonical_name: str | None
-    ) -> RuntimeNodeType | None:
-        if not canonical_name:
-            return None
-        return self._canonical.get(_normalize_key(canonical_name))
 
 
 def _node_document_priority(

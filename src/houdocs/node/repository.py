@@ -7,7 +7,8 @@ from pathlib import Path
 
 from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
-from houdocs.node.models import NodeDocumentRecord
+from houdocs.node.models import NodeDocumentRecord, ResolvedNodeDocument
+from houdocs.node.serialization import decode_node_document, encode_node_document
 
 
 class NodeRepository:
@@ -28,12 +29,7 @@ class NodeRepository:
                             record.node_type.node_type_id,
                             record.node_type.document_id,
                             record.node_type.canonical_name or record.node_type.internal_name,
-                            json.dumps(
-                                _metadata_payload(record),
-                                ensure_ascii=False,
-                                separators=(",", ":"),
-                                sort_keys=True,
-                            ),
+                            encode_node_document(record),
                         )
                         for record in records
                     ],
@@ -104,7 +100,7 @@ class NodeRepository:
             ) from exc
         return len(overrides)
 
-    def resolve(self, node_type: str) -> tuple[str, dict[str, object]] | None:
+    def resolve(self, node_type: str) -> ResolvedNodeDocument | None:
         key = node_type.strip()
         with connect_readonly(self.database) as connection:
             row = connection.execute(
@@ -121,103 +117,19 @@ class NodeRepository:
             ).fetchone()
         if row is None:
             return None
-        try:
-            payload = json.loads(row["metadata_json"] or "{}")
-        except json.JSONDecodeError as exc:
+        document_id = str(row["document_id"])
+        record = decode_node_document(row["metadata_json"], node_type=node_type)
+        if record.node_type.document_id != document_id:
             raise HouDocsError(
                 "docs_database_error",
-                f"Invalid node metadata JSON for: {node_type}",
-                detail=str(exc),
-            ) from exc
-        if not isinstance(payload, dict):
-            raise HouDocsError(
-                "docs_database_error",
-                f"Invalid node metadata payload for: {node_type}",
+                f"Node metadata document ID does not match index row for: {node_type}",
             )
-        return str(row["document_id"]), payload
+        return ResolvedNodeDocument(document_id=document_id, record=record)
 
     def count(self) -> int:
         with connect_readonly(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM node_documents").fetchone()
         return int(row[0])
-
-
-def _metadata_payload(record: NodeDocumentRecord) -> dict[str, object]:
-    node_type = record.node_type
-    return {
-        "node_type": {
-            "node_type_id": node_type.node_type_id,
-            "document_id": node_type.document_id,
-            "context": node_type.context,
-            "namespace": node_type.namespace,
-            "internal_name": node_type.internal_name,
-            "version": node_type.version,
-            "category": node_type.category,
-            "canonical_name": node_type.canonical_name,
-            "priority": node_type.priority,
-            "resolution_source": node_type.resolution_source,
-            "unresolved_reason": node_type.unresolved_reason,
-        },
-        "parameters": [
-            {
-                "parameter_id": item.parameter_id,
-                "node_type_id": item.node_type_id,
-                "ordinal": item.ordinal,
-                "parm_id": item.parm_id,
-                "label": item.label,
-                "folder_path": list(item.folder_path),
-                "parm_type": item.parm_type,
-                "multiparm": item.multiparm,
-                "runtime_present": item.runtime_present,
-            }
-            for item in record.parameters
-        ],
-        "parameter_docs": [
-            {
-                "doc_parameter_id": item.doc_parameter_id,
-                "node_type_id": item.node_type_id,
-                "ordinal": item.ordinal,
-                "label": item.label,
-                "group_path": list(item.group_path),
-                "description": item.description,
-                "explicit_ids": list(item.explicit_ids),
-                "unresolved_reason": item.unresolved_reason,
-            }
-            for item in record.parameter_docs
-        ],
-        "parameter_links": [
-            {
-                "doc_parameter_id": item.doc_parameter_id,
-                "parameter_id": item.parameter_id,
-                "ordinal": item.ordinal,
-                "resolution_source": item.resolution_source,
-            }
-            for item in record.parameter_links
-        ],
-        "ports": [
-            {
-                "node_type_id": item.node_type_id,
-                "direction": item.direction,
-                "ordinal": item.ordinal,
-                "label": item.label,
-                "description": item.description,
-            }
-            for item in record.ports
-        ],
-        "related": [
-            {
-                "node_type_id": item.node_type_id,
-                "ordinal": item.ordinal,
-                "kind": item.kind,
-                "target": item.target,
-                "label": item.label,
-                "canonical_target": item.canonical_target,
-                "resolved": item.resolved,
-                "unresolved_reason": item.unresolved_reason,
-            }
-            for item in record.related
-        ],
-    }
 
 
 def _parameter_override_fields(

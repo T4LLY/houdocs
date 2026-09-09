@@ -154,3 +154,9 @@ class NodeResolutionResult:
     record: NodeDocumentRecord
     counts: dict[str, int]
     unresolved: dict[str, list[dict[str, object]]]
+
+
+@dataclass(frozen=True)
+class ResolvedNodeDocument:
+    document_id: str
+    record: NodeDocumentRecord

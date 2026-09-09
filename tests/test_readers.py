@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from houdocs.db.connection import connect_writable
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
@@ -600,9 +601,55 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
     resolved = repository.resolve("Sop/foo")
 
     assert resolved is not None
-    assert resolved[0] == "higher"
+    assert resolved.document_id == "higher"
 
     bare = repository.resolve("foo")
 
     assert bare is not None
-    assert bare[0] == "higher"
+    assert bare.document_id == "higher"
+    assert bare.record.node_type.document_id == "higher"
+
+
+def test_node_repository_rejects_invalid_serialized_metadata(tmp_path: Path) -> None:
+    database = tmp_path / "docs.db"
+    documents = _repository(database)
+    documents.replace_document(
+        Document("doc", "Example", "nodes/sop/example.txt", "node", "22.0.429", "body"),
+        [],
+    )
+    repository = NodeRepository(database)
+    repository.replace_all(
+        [
+            NodeDocumentRecord(
+                node_type=NodeTypeDocument(
+                    "node",
+                    "doc",
+                    "sop",
+                    None,
+                    "example",
+                    None,
+                    "Sop",
+                    "Sop/example",
+                    1,
+                    "houdini",
+                    None,
+                ),
+                parameters=(),
+                parameter_docs=(),
+                parameter_links=(),
+                ports=(),
+                related=(),
+            )
+        ]
+    )
+    with connect_writable(database) as connection:
+        connection.execute(
+            "UPDATE node_documents SET metadata_json = ? WHERE node_type = ?",
+            ('{"node_type":[]}', "node"),
+        )
+        connection.commit()
+
+    with pytest.raises(HouDocsError) as raised:
+        repository.resolve("Sop/example")
+
+    assert raised.value.error.code == "docs_database_error"

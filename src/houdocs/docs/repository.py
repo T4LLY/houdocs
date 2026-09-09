@@ -3,11 +3,27 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from collections.abc import Sequence
+from itertools import groupby
 from pathlib import Path
 
 from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.errors import HouDocsError
+
+
+_SECTION_SELECT = """
+    d.id AS source_document_id,
+    d.kind AS source_kind,
+    d.path AS source_relative_path,
+    s.id AS section_id,
+    s.document_id AS section_document_id,
+    s.ordinal AS section_ordinal,
+    s.anchor AS section_anchor,
+    s.heading AS section_heading,
+    s.level AS section_level,
+    s.token_count AS section_token_count,
+    s.text AS section_text
+"""
 
 
 class DocumentRepository:
@@ -37,13 +53,20 @@ class DocumentRepository:
         return [str(row["id"]) for row in rows]
 
     def sections_for_document(self, document_id: str) -> list[DocumentSection]:
-        document = self.document(document_id)
         with self._read() as connection:
             rows = connection.execute(
-                "SELECT * FROM sections WHERE document_id = ? ORDER BY ordinal, id",
+                f"""
+                SELECT {_SECTION_SELECT}
+                FROM documents AS d
+                LEFT JOIN sections AS s ON s.document_id = d.id
+                WHERE d.id = ?
+                ORDER BY s.ordinal, s.id
+                """,
                 (document_id,),
             ).fetchall()
-        return _sections_from_rows(rows, document.kind, document.relative_path)
+        if not rows:
+            raise HouDocsError("document_not_found", f"Document not found: {document_id}")
+        return _sections_from_joined_rows(rows)
 
 
     def documents_for_title(self, title: str) -> list[Document]:
@@ -56,13 +79,22 @@ class DocumentRepository:
 
     def section(self, section_id: str) -> DocumentSection:
         with self._read() as connection:
-            row = connection.execute(
-                "SELECT document_id FROM sections WHERE id = ?",
+            rows = connection.execute(
+                f"""
+                WITH target AS (
+                    SELECT document_id
+                    FROM sections
+                    WHERE id = ?
+                )
+                SELECT {_SECTION_SELECT}
+                FROM target
+                JOIN documents AS d ON d.id = target.document_id
+                JOIN sections AS s ON s.document_id = d.id
+                ORDER BY s.ordinal, s.id
+                """,
                 (section_id,),
-            ).fetchone()
-        if row is None:
-            raise HouDocsError("document_section_not_found", f"Section not found: {section_id}")
-        for section in self.sections_for_document(str(row["document_id"])):
+            ).fetchall()
+        for section in _sections_from_joined_rows(rows):
             if section.section_id == section_id:
                 return section
         raise HouDocsError("document_section_not_found", f"Section not found: {section_id}")
@@ -84,10 +116,16 @@ class DocumentRepository:
         return matches
 
     def all_sections(self) -> list[DocumentSection]:
-        result: list[DocumentSection] = []
-        for document in self.all_documents():
-            result.extend(self.sections_for_document(document.document_id))
-        return result
+        with self._read() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {_SECTION_SELECT}
+                FROM sections AS s
+                JOIN documents AS d ON d.id = s.document_id
+                ORDER BY d.path, s.ordinal, s.id
+                """
+            ).fetchall()
+        return _sections_from_joined_rows(rows)
 
     def document(self, document_id: str) -> Document:
         with self._read() as connection:
@@ -188,50 +226,57 @@ class DocumentRepository:
         )
 
 
-def _sections_from_rows(
-    rows: Sequence[sqlite3.Row],
-    kind: str,
-    relative_path: str,
-) -> list[DocumentSection]:
-    stack: list[str | None] = [None] * 6
+def _sections_from_joined_rows(rows: Sequence[sqlite3.Row]) -> list[DocumentSection]:
     sections: list[DocumentSection] = []
-    for row in rows:
-        heading = row["heading"]
-        level = int(row["level"]) if row["level"] is not None else None
-        if level is not None and 1 <= level <= len(stack):
-            stack[level - 1] = str(heading) if heading else None
-            for index in range(level, len(stack)):
-                stack[index] = None
-            heading_path = tuple(part for part in stack[:level] if part)
-        else:
-            heading_path = tuple(part for part in stack if part)
-        text = str(row["text"])
-        section_id = str(row["id"])
-        document_id = str(row["document_id"])
-        metadata = {
-            "kind": kind,
-            "document_id": document_id,
-            "relative_path": relative_path,
-            "ordinal": int(row["ordinal"]),
-            "anchor": row["anchor"],
-            "heading": heading,
-            "heading_path": list(heading_path),
-            "heading_level": level,
-        }
-        sections.append(
-            DocumentSection(
-                section_id=section_id,
-                document_id=document_id,
-                ordinal=int(row["ordinal"]),
-                anchor=row["anchor"],
-                heading=heading,
-                heading_path=heading_path,
-                heading_level=level,
-                kind=kind,
-                content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                token_count=int(row["token_count"]),
-                text=text,
-                metadata=metadata,
+    for _document_id, document_rows in groupby(
+        rows, key=lambda row: str(row["source_document_id"])
+    ):
+        stack: list[str | None] = [None] * 6
+        for row in document_rows:
+            if row["section_id"] is None:
+                continue
+            heading = row["section_heading"]
+            level = (
+                int(row["section_level"])
+                if row["section_level"] is not None
+                else None
             )
-        )
+            if level is not None and 1 <= level <= len(stack):
+                stack[level - 1] = str(heading) if heading else None
+                for index in range(level, len(stack)):
+                    stack[index] = None
+                heading_path = tuple(part for part in stack[:level] if part)
+            else:
+                heading_path = tuple(part for part in stack if part)
+            text = str(row["section_text"])
+            section_id = str(row["section_id"])
+            document_id = str(row["section_document_id"])
+            kind = str(row["source_kind"])
+            relative_path = str(row["source_relative_path"])
+            metadata = {
+                "kind": kind,
+                "document_id": document_id,
+                "relative_path": relative_path,
+                "ordinal": int(row["section_ordinal"]),
+                "anchor": row["section_anchor"],
+                "heading": heading,
+                "heading_path": list(heading_path),
+                "heading_level": level,
+            }
+            sections.append(
+                DocumentSection(
+                    section_id=section_id,
+                    document_id=document_id,
+                    ordinal=int(row["section_ordinal"]),
+                    anchor=row["section_anchor"],
+                    heading=heading,
+                    heading_path=heading_path,
+                    heading_level=level,
+                    kind=kind,
+                    content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    token_count=int(row["section_token_count"]),
+                    text=text,
+                    metadata=metadata,
+                )
+            )
     return sections

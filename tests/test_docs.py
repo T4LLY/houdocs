@@ -226,3 +226,64 @@ def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
     )
 
     assert progress == [(0, 2), (1, 2), (2, 2)]
+
+
+def test_section_reads_use_single_query_and_preserve_document_heading_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import houdocs.docs.repository as repository_module
+
+    source = tmp_path / "help"
+    source.mkdir()
+    (source / "a.txt").write_text(
+        "= Alpha =\n\nAlpha intro.\n\n== Child ==\n\nAlpha child.\n",
+        encoding="utf-8",
+    )
+    (source / "b.txt").write_text(
+        "= Beta =\n\nBeta intro.\n\n== Child ==\n\nBeta child.\n",
+        encoding="utf-8",
+    )
+    repository = _repository(tmp_path / "docs.db")
+    DocumentIndexer(
+        repository=repository,
+        parser=BookishDocumentParser(),
+        cache_directory=tmp_path / "cache",
+        token_counter=len,
+    ).index_all(source)
+    alpha = repository.documents_for_title("Alpha")[0]
+    alpha_sections = repository.sections_for_document(alpha.document_id)
+    child_id = alpha_sections[-1].section_id
+
+    original_connect = repository_module.connect_readonly
+    statements: list[str] = []
+
+    def traced_connect(path: Path) -> sqlite3.Connection:
+        connection = original_connect(path)
+        connection.set_trace_callback(lambda statement: statements.append(statement.strip()))
+        return connection
+
+    monkeypatch.setattr(repository_module, "connect_readonly", traced_connect)
+
+    statements.clear()
+    all_sections = repository.all_sections()
+    assert len(statements) == 1
+    assert [section.heading_path for section in all_sections] == [
+        ("Alpha",),
+        ("Alpha", "Child"),
+        ("Beta",),
+        ("Beta", "Child"),
+    ]
+
+    statements.clear()
+    sections = repository.sections_for_document(alpha.document_id)
+    assert len(statements) == 1
+    assert [section.heading_path for section in sections] == [
+        ("Alpha",),
+        ("Alpha", "Child"),
+    ]
+
+    statements.clear()
+    section = repository.section(child_id)
+    assert len(statements) == 1
+    assert section.heading_path == ("Alpha", "Child")

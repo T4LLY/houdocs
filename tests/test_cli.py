@@ -230,6 +230,7 @@ def test_init_summary_omits_full_issue_details() -> None:
         "search_entries": 40213,
         "warnings": 3895,
         "errors": 2,
+        "report": "C:/houdocs/reports/init-report.json",
     }
     assert "issues" not in summary
 

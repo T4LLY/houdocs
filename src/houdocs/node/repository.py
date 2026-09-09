@@ -7,30 +7,14 @@ from pathlib import Path
 
 from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
-from houdocs.node.models import (
-    NodeParameter,
-    NodeParameterDoc,
-    NodeParameterLink,
-    NodePort,
-    NodeRelated,
-    NodeTypeDocument,
-)
-
-NodeRecord = tuple[
-    NodeTypeDocument,
-    Sequence[NodeParameter],
-    Sequence[NodeParameterDoc],
-    Sequence[NodeParameterLink],
-    Sequence[NodePort],
-    Sequence[NodeRelated],
-]
+from houdocs.node.models import NodeDocumentRecord
 
 
 class NodeRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def replace_all(self, records: Sequence[NodeRecord]) -> None:
+    def replace_all(self, records: Sequence[NodeDocumentRecord]) -> None:
         try:
             with connect_writable(self.database) as connection:
                 connection.execute("DELETE FROM node_documents")
@@ -41,24 +25,17 @@ class NodeRepository:
                     """,
                     [
                         (
-                            node_type.node_type_id,
-                            node_type.document_id,
-                            node_type.canonical_name or node_type.internal_name,
+                            record.node_type.node_type_id,
+                            record.node_type.document_id,
+                            record.node_type.canonical_name or record.node_type.internal_name,
                             json.dumps(
-                                _metadata_payload(
-                                    node_type,
-                                    parameters,
-                                    parameter_docs,
-                                    parameter_links,
-                                    ports,
-                                    related,
-                                ),
+                                _metadata_payload(record),
                                 ensure_ascii=False,
                                 separators=(",", ":"),
                                 sort_keys=True,
                             ),
                         )
-                        for node_type, parameters, parameter_docs, parameter_links, ports, related in records
+                        for record in records
                     ],
                 )
                 connection.commit()
@@ -165,14 +142,8 @@ class NodeRepository:
         return int(row[0])
 
 
-def _metadata_payload(
-    node_type: NodeTypeDocument,
-    parameters: Sequence[NodeParameter],
-    parameter_docs: Sequence[NodeParameterDoc],
-    parameter_links: Sequence[NodeParameterLink],
-    ports: Sequence[NodePort],
-    related: Sequence[NodeRelated],
-) -> dict[str, object]:
+def _metadata_payload(record: NodeDocumentRecord) -> dict[str, object]:
+    node_type = record.node_type
     return {
         "node_type": {
             "node_type_id": node_type.node_type_id,
@@ -199,7 +170,7 @@ def _metadata_payload(
                 "multiparm": item.multiparm,
                 "runtime_present": item.runtime_present,
             }
-            for item in parameters
+            for item in record.parameters
         ],
         "parameter_docs": [
             {
@@ -212,7 +183,7 @@ def _metadata_payload(
                 "explicit_ids": list(item.explicit_ids),
                 "unresolved_reason": item.unresolved_reason,
             }
-            for item in parameter_docs
+            for item in record.parameter_docs
         ],
         "parameter_links": [
             {
@@ -221,7 +192,7 @@ def _metadata_payload(
                 "ordinal": item.ordinal,
                 "resolution_source": item.resolution_source,
             }
-            for item in parameter_links
+            for item in record.parameter_links
         ],
         "ports": [
             {
@@ -231,7 +202,7 @@ def _metadata_payload(
                 "label": item.label,
                 "description": item.description,
             }
-            for item in ports
+            for item in record.ports
         ],
         "related": [
             {
@@ -244,7 +215,7 @@ def _metadata_payload(
                 "resolved": item.resolved,
                 "unresolved_reason": item.unresolved_reason,
             }
-            for item in related
+            for item in record.related
         ],
     }
 

@@ -7,9 +7,9 @@ from houdocs.docs.models import Document
 from houdocs.errors import HouDocsError
 from houdocs.docs.repository import DocumentRepository
 from houdocs.init.probe import RuntimeNodeSnapshot
-from houdocs.node.models import RuntimeNodeType, RuntimeParameter
+from houdocs.node.models import NodeDocumentRecord, RuntimeNodeType, RuntimeParameter
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
-from houdocs.node.repository import NodeRecord, NodeRepository
+from houdocs.node.repository import NodeRepository
 from houdocs.node.resolver import NodeTypeCatalog, build_node_metadata
 from houdocs.node.unresolved import load_overrides, unresolved_path, write_unresolved
 
@@ -44,7 +44,7 @@ class NodeIndexer:
         catalog = NodeTypeCatalog(_runtime_node_types(runtime_nodes))
         unresolved_file = unresolved_path(self.report_directory, houdini_version)
         active_overrides = overrides if overrides is not None else load_overrides(unresolved_file)
-        records: list[NodeRecord] = []
+        records: list[NodeDocumentRecord] = []
         unresolved: dict[str, list[dict[str, object]]] = {
             "node_types": [],
             "parameters": [],
@@ -107,13 +107,12 @@ class NodeIndexer:
                 )
                 continue
 
-            node_type, parameters, parameter_docs, parameter_links, ports, related, row_counts, missing = result
-            records.append((node_type, parameters, parameter_docs, parameter_links, ports, related))
+            records.append(result.record)
             counts["documents"] += 1
-            for key, value in row_counts.items():
+            for key, value in result.counts.items():
                 counts[key] += value
             for key in unresolved:
-                unresolved[key].extend(missing[key])
+                unresolved[key].extend(result.unresolved[key])
 
         self.repository.replace_all(records)
         if write_report:

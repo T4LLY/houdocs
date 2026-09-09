@@ -14,6 +14,7 @@ from houdocs.errors import HouDocsError
 from houdocs.init.probe import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.node.index import NodeIndexer
 from houdocs.node.models import (
+    NodeDocumentRecord,
     NodeParameter,
     NodeParameterDoc,
     NodeParameterLink,
@@ -370,8 +371,8 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
     repository = NodeRepository(database)
     repository.replace_all(
         [
-            (
-                NodeTypeDocument(
+            NodeDocumentRecord(
+                node_type=NodeTypeDocument(
                     "Sop/example",
                     "node-doc",
                     "sop",
@@ -384,7 +385,7 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
                     "houdini",
                     None,
                 ),
-                (
+                parameters=(
                     NodeParameter(
                         "p0",
                         "Sop/example",
@@ -408,7 +409,7 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
                         True,
                     ),
                 ),
-                (
+                parameter_docs=(
                     NodeParameterDoc(
                         "d0",
                         "Sop/example",
@@ -440,16 +441,16 @@ def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -
                         "no_houdini_match",
                     ),
                 ),
-                (
+                parameter_links=(
                     NodeParameterLink("d0", "p0", 0, "houdini-label"),
                     NodeParameterLink("d1", "p1", 0, "houdini-label"),
                 ),
-                (
+                ports=(
                     NodePort("Sop/example", "input", 1, "Target", "Target geometry."),
                     NodePort("Sop/example", "input", 0, "Source", "Source geometry."),
                     NodePort("Sop/example", "output", 0, "Output", "Result geometry."),
                 ),
-                (
+                related=(
                     NodeRelated(
                         "Sop/example",
                         0,
@@ -553,8 +554,8 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
     repository = NodeRepository(database)
     repository.replace_all(
         [
-            (
-                NodeTypeDocument(
+            NodeDocumentRecord(
+                node_type=NodeTypeDocument(
                     "a",
                     "lower",
                     "sop",
@@ -567,14 +568,14 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
                     "houdini",
                     None,
                 ),
-                (),
-                (),
-                (),
-                (),
-                (),
+                parameters=(),
+                parameter_docs=(),
+                parameter_links=(),
+                ports=(),
+                related=(),
             ),
-            (
-                NodeTypeDocument(
+            NodeDocumentRecord(
+                node_type=NodeTypeDocument(
                     "z",
                     "higher",
                     "sop",
@@ -587,11 +588,11 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
                     "houdini",
                     None,
                 ),
-                (),
-                (),
-                (),
-                (),
-                (),
+                parameters=(),
+                parameter_docs=(),
+                parameter_links=(),
+                ports=(),
+                related=(),
             ),
         ]
     )

@@ -567,6 +567,7 @@ def test_node_command_lists_token_costs_and_reads_detail(
     import houdocs.cli as cli_module
     from houdocs.docs.models import Document
     from houdocs.node.models import (
+        NodeDocumentRecord,
         NodeParameter,
         NodeParameterDoc,
         NodeParameterLink,
@@ -590,8 +591,8 @@ def test_node_command_lists_token_costs_and_reads_detail(
     )
     NodeRepository(paths.database).replace_all(
         [
-            (
-                NodeTypeDocument(
+            NodeDocumentRecord(
+                node_type=NodeTypeDocument(
                     "Sop/example",
                     "node-doc",
                     "sop",
@@ -604,7 +605,7 @@ def test_node_command_lists_token_costs_and_reads_detail(
                     "houdini",
                     None,
                 ),
-                (
+                parameters=(
                     NodeParameter(
                         "p0",
                         "Sop/example",
@@ -617,7 +618,7 @@ def test_node_command_lists_token_costs_and_reads_detail(
                         True,
                     ),
                 ),
-                (
+                parameter_docs=(
                     NodeParameterDoc(
                         "d0",
                         "Sop/example",
@@ -629,9 +630,9 @@ def test_node_command_lists_token_costs_and_reads_detail(
                         None,
                     ),
                 ),
-                (NodeParameterLink("d0", "p0", 0, "houdini-label"),),
-                (),
-                (),
+                parameter_links=(NodeParameterLink("d0", "p0", 0, "houdini-label"),),
+                ports=(),
+                related=(),
             )
         ]
     )

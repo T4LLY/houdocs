@@ -137,3 +137,20 @@ class NodeRelated:
     canonical_target: str | None
     resolved: bool
     unresolved_reason: str | None
+
+
+@dataclass(frozen=True)
+class NodeDocumentRecord:
+    node_type: NodeTypeDocument
+    parameters: tuple[NodeParameter, ...]
+    parameter_docs: tuple[NodeParameterDoc, ...]
+    parameter_links: tuple[NodeParameterLink, ...]
+    ports: tuple[NodePort, ...]
+    related: tuple[NodeRelated, ...]
+
+
+@dataclass(frozen=True)
+class NodeResolutionResult:
+    record: NodeDocumentRecord
+    counts: dict[str, int]
+    unresolved: dict[str, list[dict[str, object]]]

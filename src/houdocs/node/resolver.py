@@ -9,11 +9,13 @@ from pathlib import Path
 from houdocs.node.models import (
     DocumentedField,
     NodeDocSource,
+    NodeDocumentRecord,
     NodeParameter,
     NodeParameterDoc,
     NodeParameterLink,
     NodePort,
     NodeRelated,
+    NodeResolutionResult,
     NodeTypeDocument,
     NodeTypeLookup,
     RelatedLink,
@@ -89,16 +91,7 @@ def build_node_metadata(
     node_doc: NodeDocSource,
     catalog: NodeTypeCatalog,
     overrides: dict[str, list[dict[str, object]]],
-) -> tuple[
-    NodeTypeDocument,
-    list[NodeParameter],
-    list[NodeParameterDoc],
-    list[NodeParameterLink],
-    list[NodePort],
-    list[NodeRelated],
-    dict[str, int],
-    dict[str, list[dict[str, object]]],
-]:
+) -> NodeResolutionResult:
     context = node_doc.context or ""
     internal_name = node_doc.internal_name or ""
     lookup = strict_node_lookup(relative_path, node_doc)
@@ -199,15 +192,17 @@ def build_node_metadata(
         "parameters": parameter_unresolved,
         "related": related_unresolved,
     }
-    return (
-        node_type,
-        parameter_rows,
-        parameter_docs,
-        parameter_links,
-        ports,
-        related_rows,
-        counts,
-        unresolved,
+    return NodeResolutionResult(
+        record=NodeDocumentRecord(
+            node_type=node_type,
+            parameters=tuple(parameter_rows),
+            parameter_docs=tuple(parameter_docs),
+            parameter_links=tuple(parameter_links),
+            ports=tuple(ports),
+            related=tuple(related_rows),
+        ),
+        counts=counts,
+        unresolved=unresolved,
     )
 
 

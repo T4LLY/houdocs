@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from houdocs.cli import _init_summary, app
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.repository import DocumentRepository
-from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
+from houdocs.init.probe import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.paths import VersionPaths
 
 

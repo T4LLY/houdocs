@@ -9,8 +9,8 @@ from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.header import parse_page_properties
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
+from houdocs.init.probe import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.node.index import NodeIndexer
-from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
 from houdocs.python_docs.parser import _group_signatures

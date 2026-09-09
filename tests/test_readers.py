@@ -11,6 +11,7 @@ from houdocs.docs.models import Document
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
+from houdocs.init.probe import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.node.index import NodeIndexer
 from houdocs.node.models import (
     NodeParameter,
@@ -19,8 +20,6 @@ from houdocs.node.models import (
     NodePort,
     NodeRelated,
     NodeTypeDocument,
-    RuntimeNodeSnapshot,
-    RuntimeParameterSnapshot,
 )
 from houdocs.node.read import NodeReader
 from houdocs.node.repository import NodeRepository

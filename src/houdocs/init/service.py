@@ -10,7 +10,8 @@ from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
 from houdocs.init.progress import InitProgress
 from houdocs.init.report import InitReporter, write_json_atomic
-from houdocs.init.runtime import HoudiniRuntime, RuntimeSnapshot
+from houdocs.init.probe import RuntimeSnapshot
+from houdocs.init.runtime import HoudiniRuntime
 from houdocs.init.staging import InitStaging
 from houdocs.node.index import NodeIndexer
 from houdocs.node.repository import NodeRepository

@@ -4,9 +4,13 @@ import json
 from pathlib import Path
 
 from houdocs.config import load_config
-from houdocs.init.runtime import HoudiniInstallation, RuntimeSnapshot
+from houdocs.init.probe import (
+    RuntimeNodeSnapshot,
+    RuntimeParameterSnapshot,
+    RuntimeSnapshot,
+)
+from houdocs.init.runtime import HoudiniInstallation
 from houdocs.init.service import InitService
-from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 
 
 class FakeRuntime:

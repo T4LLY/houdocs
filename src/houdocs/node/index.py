@@ -6,11 +6,8 @@ from pathlib import Path, PurePosixPath
 from houdocs.docs.models import Document
 from houdocs.errors import HouDocsError
 from houdocs.docs.repository import DocumentRepository
-from houdocs.node.models import (
-    RuntimeNodeSnapshot,
-    RuntimeNodeType,
-    RuntimeParameter,
-)
+from houdocs.init.probe import RuntimeNodeSnapshot
+from houdocs.node.models import RuntimeNodeType, RuntimeParameter
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
 from houdocs.node.repository import NodeRecord, NodeRepository
 from houdocs.node.resolver import NodeTypeCatalog, build_node_metadata

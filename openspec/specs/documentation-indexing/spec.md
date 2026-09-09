@@ -34,36 +34,37 @@ Initialization SHALL parse cached Bookish text into `documents` and ordered `sec
 - **WHEN** a Bookish page contains nested headings and anchors
 - **THEN** sections preserve their ordinal, anchor, heading level, heading path semantics, and normalized text
 
-### Requirement: Keep docs indexing incremental
+### Requirement: Rebuild documentation state from fresh staging artifacts
 
-Initialization SHALL compare each document's content hash with the existing version database. Unchanged indexed documents SHALL be skipped, changed documents SHALL replace their sections, and documents absent from the current authoritative Help scan SHALL be removed.
+A normal `houdocs init` SHALL construct the selected version's documentation database and Help cache from fresh staging artifacts using the current authoritative Help source. Existing generated `docs.db` contents and the previous `docs/` cache SHALL NOT be used as incremental indexing input. Only a successfully completed staged build SHALL replace the previous generated version artifacts.
 
 #### Scenario: Reinitialize unchanged Help
-- **WHEN** a previously indexed document has the same content hash
-- **THEN** that document is counted as skipped
+- **WHEN** a version is initialized again with unchanged authoritative Help
+- **THEN** each successfully acquired document is parsed and indexed into the fresh staged database
+- **AND** no previous document hash is consulted to skip indexing
 
-#### Scenario: Remove a deleted Help document
-- **WHEN** a previously indexed document no longer appears in the current Help scan
-- **THEN** its document row and dependent sections are deleted
+#### Scenario: Help document was removed since the previous init
+- **WHEN** a document present in the previous generated version state is absent from the current authoritative Help source
+- **THEN** the newly built staged documentation state does not contain that document
 
 ### Requirement: Continue after per-document acquisition or parse failures
 
-A failure to read one Help file, read one archive member, open one invalid archive, or parse one Bookish document SHALL be recorded as an initialization error issue and SHALL NOT stop other documents from being indexed. A changed document that cannot be parsed SHALL NOT leave its older indexed body active.
+A failure to read one Help file, read one archive member, open one invalid archive, or parse one Bookish document SHALL be recorded as an initialization error issue and SHALL NOT stop other documents from being indexed. A document that cannot be parsed SHALL NOT write a document row or sections into the fresh staged database.
 
 #### Scenario: Invalid archive beside valid Help
 - **WHEN** one Help archive is invalid and another document is readable
 - **THEN** initialization records a `docs_archive_invalid` error issue
 - **AND** continues indexing the readable document
 
-#### Scenario: Changed document cannot be parsed
-- **WHEN** a previously indexed document changes and the new content cannot be parsed
+#### Scenario: Document cannot be parsed
+- **WHEN** one acquired document cannot be parsed
 - **THEN** initialization records a `bookish_parse_error` error issue
-- **AND** removes the older indexed document body
+- **AND** that document has no active document row or sections in the staged database
 
 ### Requirement: Report document indexing counts
 
-The initialization report SHALL include document counts for total successfully acquired documents, indexed documents, skipped unchanged documents, removed stale documents, and documents that failed during parsing.
+The initialization report SHALL include document counts for total successfully acquired documents, successfully indexed documents, and documents that failed during parsing. Incremental-only skipped and removed counts SHALL NOT be reported.
 
-#### Scenario: Reinitialize one unchanged document
-- **WHEN** one successfully acquired document is already current
-- **THEN** the report records `total = 1`, `indexed = 0`, `skipped = 1`, and `failed = 0`
+#### Scenario: Index one readable document
+- **WHEN** one document is acquired and parsed successfully
+- **THEN** the report records `total = 1`, `indexed = 1`, and `failed = 0`

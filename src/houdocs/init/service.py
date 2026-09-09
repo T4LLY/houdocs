@@ -21,7 +21,6 @@ from houdocs.python_docs.repository import PythonRepository
 from houdocs.search.embedding import Model2VecEmbeddingProvider
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
-from houdocs.search.store import SearchStore
 from houdocs.search.tokens import count_openai_tokens
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.repository import VexRepository
@@ -150,7 +149,6 @@ class InitService:
                     python_documents=python_repository,
                     vex_documents=vex_repository,
                     backend=search_backend,
-                    store=SearchStore(staged_search_database),
                     embedding_profile=config.search_embedding.docs_profile,
                 ).index_all(
                     embedding_progress=(

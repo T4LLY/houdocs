@@ -46,15 +46,15 @@ During Help document indexing, ETA SHALL be calculated from the arithmetic mean 
 - **WHEN** only 12 documents have completed
 - **THEN** the ETA uses those 12 available completion durations
 
-### Requirement: Search embedding work reports uncached counts and recent ETA
+### Requirement: Search embedding work reports unique computations and recent ETA
 
-When progress is enabled, search-index construction SHALL report the completed and total uncached section embeddings, percentage, and ETA. ETA SHALL use at most the most recent 30 completed embedding batches, weighted by the number of sections completed in those batches. Earlier batches outside that window SHALL NOT influence the estimate. Before the first completed embedding batch, ETA SHALL be unknown. If no embeddings require computation, the progress line SHALL report that embeddings are cached.
+When progress is enabled, search-index construction SHALL report the completed and total embedding computations required by the current staged build after same-hash reuse, percentage, and ETA. ETA SHALL use at most the most recent 30 completed embedding batches, weighted by the number of embeddings completed in those batches. Earlier batches outside that window SHALL NOT influence the estimate. Before the first completed embedding batch, ETA SHALL be unknown. If no embedding computation is required, the progress line SHALL report that embeddings are cached.
 
 #### Scenario: Embedding batches have completed
-- **WHEN** at least one uncached embedding batch has completed
-- **THEN** progress reports completed/total sections, percentage, and ETA
+- **WHEN** at least one required embedding batch has completed
+- **THEN** progress reports completed/total embeddings, percentage, and ETA
 - **AND** ETA is derived only from the most recent 30 embedding batches
 
-#### Scenario: All embeddings are cached
-- **WHEN** search indexing finds zero missing embedding vectors
+#### Scenario: No embedding computation is required
+- **WHEN** search indexing finds zero missing embedding vectors in the current staged search database
 - **THEN** progress reports `embeddings cached`

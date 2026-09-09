@@ -14,7 +14,6 @@ from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
 from houdocs.search.models import SearchEntry, SearchHit
 from houdocs.search.service import DocumentSearchService
-from houdocs.search.store import SearchStore
 
 
 def _test_token_count(text: str) -> int:
@@ -150,12 +149,11 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
     result = SearchIndexer(
         documents=docs,
         backend=backend,
-        store=SearchStore(tmp_path / "search.db"),
         embedding_profile="test-profile",
         token_counter=_test_token_count,
     ).index_all()
 
-    assert result == {"entries": 2, "indexed": 2, "skipped": 0, "removed": 0}
+    assert result == {"entries": 2}
     payload = DocumentSearchService(repository=docs, backend=backend).search("alpha")
     assert set(payload) == {"hits"}
     assert payload["hits"][0]["path"] == ["Page", "Alpha"]
@@ -164,44 +162,35 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
     assert payload["hits"][0]["tokens"] == 10
 
 
-def test_search_reuses_unchanged_entries_and_reindexes_profile_change(
+def test_search_indexer_indexes_all_entries_each_run(
     tmp_path: Path,
 ) -> None:
     docs = DocumentRepository(tmp_path / "docs.db")
     document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
     docs.replace_document(document, [_section("doc", 0, "Alpha", "alpha")])
+    dense = FakeDense()
     backend = HybridSearchBackend(
         database=tmp_path / "search.db",
         embeddings=FakeEmbeddings(),
-        dense_index=FakeDense(),
+        dense_index=dense,
     )
-    store = SearchStore(tmp_path / "search.db")
 
     first = SearchIndexer(
         documents=docs,
         backend=backend,
-        store=store,
         embedding_profile="p1",
         token_counter=_test_token_count,
     ).index_all()
     second = SearchIndexer(
         documents=docs,
         backend=backend,
-        store=store,
         embedding_profile="p1",
         token_counter=_test_token_count,
     ).index_all()
-    third = SearchIndexer(
-        documents=docs,
-        backend=backend,
-        store=store,
-        embedding_profile="p2",
-        token_counter=_test_token_count,
-    ).index_all()
 
-    assert first["indexed"] == 1
-    assert second == {"entries": 1, "indexed": 0, "skipped": 1, "removed": 0}
-    assert third["indexed"] == 1
+    assert first == {"entries": 1}
+    assert second == {"entries": 1}
+    assert dense.entries == ["document:doc#0"]
 
 
 def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
@@ -216,7 +205,6 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
         [_section("doc", 0, "Alpha", "alpha")],
     )
     database = tmp_path / "search.db"
-    store = SearchStore(database)
     failed_backend = HybridSearchBackend(
         database=database,
         embeddings=FailingEmbeddings(),
@@ -227,12 +215,11 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
         SearchIndexer(
             documents=docs,
             backend=failed_backend,
-            store=store,
             embedding_profile="p1",
             token_counter=_test_token_count,
         ).index_all()
 
-    assert failed_backend.entry_states("document") == {}
+    assert failed_backend.entry_ids("document") == []
 
     dense = FakeDense()
     retry = SearchIndexer(
@@ -242,16 +229,15 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             embeddings=FakeEmbeddings(),
             dense_index=dense,
         ),
-        store=store,
         embedding_profile="p1",
         token_counter=_test_token_count,
     ).index_all()
 
-    assert retry["indexed"] == 1
+    assert retry == {"entries": 1}
     assert dense.entries == ["document:doc#0"]
 
 
-def test_search_fts_rows_track_entry_rowids_for_reindexing(tmp_path: Path) -> None:
+def test_search_fts_rows_track_entry_rowids_for_repeated_upserts(tmp_path: Path) -> None:
     database = tmp_path / "search.db"
     backend = HybridSearchBackend(
         database=database,
@@ -427,41 +413,52 @@ def test_search_skips_stale_hits_without_aborting_current_results(
     assert [hit["path"] for hit in result["hits"]] == [["Page", "Alpha"]]
 
 
-def test_search_index_reports_only_uncached_embedding_progress(tmp_path: Path) -> None:
+def test_search_index_reuses_embedding_for_duplicate_content_hashes(
+    tmp_path: Path,
+) -> None:
+    class RecordingEmbeddings:
+        def __init__(self) -> None:
+            self.text_batches: list[list[str]] = []
+
+        def encode(self, texts, profile):
+            del profile
+            batch = list(texts)
+            self.text_batches.append(batch)
+            return np.asarray(
+                [[float(len(text)), 1.0] for text in batch],
+                dtype=np.float32,
+            )
+
     docs = DocumentRepository(tmp_path / "docs.db")
-    document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
     docs.replace_document(
-        document,
-        [
-            _section("doc", 0, "Alpha", "alpha"),
-            _section("doc", 1, "Beta", "beta"),
-        ],
+        Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
+        [_section("doc-a", 0, "A", "shared content")],
     )
+    docs.replace_document(
+        Document("doc-b", "B", "b.txt", "concept", "22.0.429", "hb"),
+        [_section("doc-b", 0, "B", "shared content")],
+    )
+    embeddings = RecordingEmbeddings()
     backend = HybridSearchBackend(
         database=tmp_path / "search.db",
-        embeddings=FakeEmbeddings(),
+        embeddings=embeddings,
         dense_index=FakeDense(),
     )
-    store = SearchStore(tmp_path / "search.db")
-    first_progress: list[tuple[int, int, int, float]] = []
-    second_progress: list[tuple[int, int, int, float]] = []
+    progress: list[tuple[int, int, int, float]] = []
 
-    indexer = SearchIndexer(
+    SearchIndexer(
         documents=docs,
         backend=backend,
-        store=store,
         embedding_profile="p1",
         token_counter=_test_token_count,
-    )
-    indexer.index_all(embedding_progress=lambda *values: first_progress.append(values))
-    indexer.index_all(embedding_progress=lambda *values: second_progress.append(values))
+    ).index_all(embedding_progress=lambda *values: progress.append(values))
 
-    assert first_progress[0] == (0, 2, 0, 0.0)
-    assert first_progress[-1][0:3] == (2, 2, 2)
-    assert second_progress == [(0, 0, 0, 0.0)]
+    assert embeddings.text_batches == [["shared content"]]
+    assert progress[0] == (0, 1, 0, 0.0)
+    assert progress[-1][0:3] == (1, 1, 1)
 
 
-def test_search_index_embeds_changed_sections_per_document(tmp_path: Path) -> None:
+def test_search_index_embeds_entries_per_document(tmp_path: Path) -> None:
     class RecordingEmbeddings:
         def __init__(self) -> None:
             self.batch_sizes: list[int] = []
@@ -499,7 +496,6 @@ def test_search_index_embeds_changed_sections_per_document(tmp_path: Path) -> No
     SearchIndexer(
         documents=docs,
         backend=backend,
-        store=SearchStore(tmp_path / "search.db"),
         embedding_profile="p1",
         token_counter=_test_token_count,
     ).index_all()
@@ -527,8 +523,8 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
                 """
                 INSERT INTO search_entries(
                     entry_id, namespace, source_id, content_hash,
-                    embedding_profile_id, token_count, is_current, metadata_json
-                ) VALUES (?, 'docs', ?, ?, 'profile', 1, 1, '{}')
+                    embedding_profile_id, token_count, metadata_json
+                ) VALUES (?, 'docs', ?, ?, 'profile', 1, '{}')
                 """,
                 (entry_id, entry_id, f"hash-{entry_id}"),
             )
@@ -684,7 +680,6 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         python_documents=hom,
         vex_documents=vex,
         backend=backend,
-        store=SearchStore(tmp_path / "search.db"),
         embedding_profile="p1",
         token_counter=_test_token_count,
     ).index_all()

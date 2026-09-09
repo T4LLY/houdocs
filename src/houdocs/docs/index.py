@@ -61,31 +61,19 @@ class DocumentIndexer:
             self.cache_directory,
             on_error=on_error,
         )
-        current_paths = {item.relative_path for item in cached}
-        removed = self._remove_stale_documents(current_paths)
         indexed = 0
-        skipped = 0
         failed = 0
         total = len(cached)
         if progress is not None:
             progress(0, total)
 
         for position, item in enumerate(cached, start=1):
-            existing = self.repository.document_for_path(item.relative_path)
-            if self._is_current_document(existing, item):
-                skipped += 1
-                if progress is not None:
-                    progress(position, total)
-                continue
-
-            document_id = existing.document_id if existing else _document_id(item.relative_path)
+            document_id = _document_id(item.relative_path)
             kind = classify_document(item.relative_path)
             try:
                 sections = self._parse_sections(item, document_id, kind)
             except Exception as exc:
                 failed += 1
-                if existing is not None:
-                    self.repository.delete_document(existing.document_id)
                 if on_error is not None:
                     on_error(
                         "bookish_parse_error",
@@ -112,28 +100,8 @@ class DocumentIndexer:
         return {
             "total": len(cached),
             "indexed": indexed,
-            "skipped": skipped,
-            "removed": removed,
             "failed": failed,
         }
-
-    def _is_current_document(
-        self,
-        existing: Document | None,
-        item: CachedDocument,
-    ) -> bool:
-        if existing is None or existing.content_hash != item.content_hash:
-            return False
-        return bool(self.repository.section_ids_for_document(existing.document_id))
-
-    def _remove_stale_documents(self, current_paths: set[str]) -> int:
-        removed = 0
-        for existing in self.repository.all_documents():
-            if existing.relative_path in current_paths:
-                continue
-            self.repository.delete_document(existing.document_id)
-            removed += 1
-        return removed
 
     def _parse_sections(
         self,

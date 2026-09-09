@@ -6,25 +6,39 @@ Define the version-local documentation search index, its four search domains, an
 
 ## Requirements
 
-### Requirement: Build search state during init
+### Requirement: Build fresh search state during init
 
-`houdocs init` SHALL build the selected version's `search.db` as rebuildable derived data with `node`, `hom`, `vex`, and `document` namespaces.
+`houdocs init` SHALL build the selected version's `search.db` as rebuildable derived data with `node`, `hom`, `vex`, and `document` namespaces. A normal init SHALL build from a fresh staged search database and SHALL NOT use the previous generated search entries as incremental input.
 
-#### Scenario: First search indexing run
-- **WHEN** common and specialized documentation indexes exist and the version has no search index
+#### Scenario: Build the search index
+- **WHEN** common and specialized documentation indexes exist
 - **THEN** node-document sections are indexed in `node`
 - **AND** general sections outside Node, HOM, and VEX are indexed in `document`
 - **AND** each directly readable HOM symbol is indexed as one `hom` search entry
 - **AND** each VEX function is indexed as one `vex` search entry
 
 #### Scenario: Reinitialize unchanged sections
-- **WHEN** a section content hash and embedding profile are unchanged
-- **THEN** its search entry is skipped
-- **AND** its cached embedding remains reusable
+- **WHEN** a version is initialized again with unchanged source documentation
+- **THEN** all current search entries are written into the fresh staged search database
+- **AND** no previous search-entry state is consulted to skip them
 
-#### Scenario: Embedding profile changes
-- **WHEN** the configured documentation embedding profile changes
-- **THEN** current sections are reindexed for the new profile even if their text is unchanged
+### Requirement: Reuse duplicate embeddings within the staged build
+
+Within one staged search build, HouDocs SHALL reuse an embedding when the same content hash has already been embedded for the configured documentation embedding profile. Duplicate content SHALL NOT require another model invocation. The embedding data is derived acceleration state and SHALL NOT make a previous completed search index an input to a later normal init.
+
+#### Scenario: Two entries have identical searchable content
+- **WHEN** one search entry has already produced an embedding and a later entry in the same staged build has the same content hash
+- **THEN** the existing embedding is reused for the later entry
+- **AND** the embedding model is not invoked again for that content
+
+### Requirement: Support one configured embedding profile while retaining an extension point
+
+The supported public init and search workflow SHALL use one configured documentation embedding profile for the generated search index. Multiple concurrently active embedding profiles SHALL NOT be a supported public feature. Internal profile identifiers, profile-specific vector storage, and backend mechanisms MAY remain as extension points for introducing multi-profile support in the future.
+
+#### Scenario: Initialize with the configured documentation profile
+- **WHEN** normal initialization builds searchable entries
+- **THEN** all generated entries use the configured documentation embedding profile
+- **AND** no public control selects multiple active profiles
 
 ### Requirement: Preserve the existing hybrid ranking algorithm
 
@@ -72,18 +86,18 @@ Each search entry SHALL store the token count of the text returned when that ent
 
 ### Requirement: Bound SQLite lookup parameter counts
 
-Search indexing SHALL split large entry-ID and content-hash lookup sets into bounded batches before constructing SQLite `IN` clauses. The batching SHALL NOT change the set of matched entries or the resulting search index.
+Search storage SHALL split large entry-ID and content-hash lookup sets into bounded batches before constructing SQLite `IN` clauses. The batching SHALL NOT change the set of matched entries or the resulting search index.
 
 #### Scenario: Initializing a documentation set larger than SQLite's variable limit
-- **WHEN** `houdocs init` needs to inspect more search entry IDs than SQLite accepts in one statement
-- **THEN** HouDocs queries those IDs in bounded batches
+- **WHEN** search construction needs to inspect more IDs or content hashes than SQLite accepts in one statement
+- **THEN** HouDocs queries them in bounded batches
 - **AND** indexing continues without a `too many SQL variables` failure
 
 ### Requirement: Embedding work is bounded by source document
 
-Search indexing SHALL group changed search entries by their source document before submitting them to the embedding backend rather than using one version-wide batch. This batching SHALL NOT change section identity, cache reuse, progress totals, or search results.
+Search indexing SHALL group search entries by their source document before submitting them to the embedding backend rather than using one version-wide batch. This batching SHALL NOT change entry identity, same-hash embedding reuse, progress totals, or search results.
 
 #### Scenario: Multiple documents require embeddings
-- **WHEN** changed sections from multiple documentation pages require embeddings
-- **THEN** each backend upsert contains sections from only one document
-- **AND** the progress total still represents all uncached embeddings for the init
+- **WHEN** searchable entries from multiple documentation pages require embeddings
+- **THEN** each backend upsert contains entries from only one document
+- **AND** the progress total represents all unique uncached embeddings required by the staged build

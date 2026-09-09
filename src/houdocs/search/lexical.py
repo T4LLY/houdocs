@@ -31,7 +31,6 @@ class SQLiteFtsIndex:
             JOIN search_entries se ON se.entry_id = search_fts.entry_id
             WHERE search_fts MATCH ?
               AND search_fts.namespace IN ({placeholders})
-              AND se.is_current = 1
             ORDER BY score ASC
             LIMIT ?
         """

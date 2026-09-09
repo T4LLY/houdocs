@@ -123,15 +123,14 @@ class HybridSearchBackend:
                     """
                     INSERT INTO search_entries(
                         entry_id, namespace, source_id, content_hash, embedding_profile_id,
-                        token_count, is_current, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                        token_count, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(entry_id) DO UPDATE SET
                         namespace=excluded.namespace,
                         source_id=excluded.source_id,
                         content_hash=excluded.content_hash,
                         embedding_profile_id=excluded.embedding_profile_id,
                         token_count=excluded.token_count,
-                        is_current=1,
                         metadata_json=excluded.metadata_json
                     """,
                     (
@@ -180,28 +179,10 @@ class HybridSearchBackend:
     def entry_ids(self, namespace: str) -> list[str]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT entry_id FROM search_entries WHERE is_current = 1 AND namespace = ? ORDER BY entry_id",
+                "SELECT entry_id FROM search_entries WHERE namespace = ? ORDER BY entry_id",
                 (namespace,),
             ).fetchall()
         return [str(row["entry_id"]) for row in rows]
-
-    def entry_states(self, namespace: str) -> dict[str, tuple[str, str]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT entry_id, content_hash, embedding_profile_id
-                FROM search_entries
-                WHERE is_current = 1 AND namespace = ?
-                """,
-                (namespace,),
-            ).fetchall()
-        return {
-            str(row["entry_id"]): (
-                str(row["content_hash"]),
-                str(row["embedding_profile_id"]),
-            )
-            for row in rows
-        }
 
     def remove(self, entry_ids: Sequence[str]) -> None:
         if not entry_ids:
@@ -323,7 +304,7 @@ class HybridSearchBackend:
             rows = connection.execute(
                 f"""
                 SELECT embedding_profile_id FROM search_entries
-                WHERE is_current = 1 AND namespace IN ({placeholders})
+                WHERE namespace IN ({placeholders})
                 GROUP BY embedding_profile_id
                 ORDER BY embedding_profile_id
                 """,
@@ -389,7 +370,7 @@ class HybridSearchBackend:
                     f"""
                     SELECT se.*, sc.content
                     FROM search_entries se JOIN search_content sc ON sc.entry_id = se.entry_id
-                    WHERE se.is_current = 1 AND se.entry_id IN ({placeholders})
+                    WHERE se.entry_id IN ({placeholders})
                     """,
                     tuple(batch),
                 ).fetchall()

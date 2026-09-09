@@ -105,9 +105,7 @@ def test_classify_document_domains() -> None:
     assert classify_document("basics/network.txt") == "concept"
 
 
-def test_document_indexer_is_incremental_and_removes_stale_documents(
-    tmp_path: Path,
-) -> None:
+def test_document_indexer_indexes_every_cached_document(tmp_path: Path) -> None:
     source = tmp_path / "help"
     source.mkdir()
     document_path = source / "concept.txt"
@@ -121,20 +119,15 @@ def test_document_indexer_is_incremental_and_removes_stale_documents(
     )
 
     first = indexer.index_all(source, houdini_version="22.0.429")
-    second = indexer.index_all(source, houdini_version="22.0.429")
     document_path.write_text("= Concept =\n\nTwo.\n", encoding="utf-8")
-    third = indexer.index_all(source, houdini_version="22.0.429")
-    document_path.unlink()
-    fourth = indexer.index_all(source, houdini_version="22.0.429")
+    second = indexer.index_all(source, houdini_version="22.0.429")
 
-    assert first == {"total": 1, "indexed": 1, "skipped": 0, "removed": 0, "failed": 0}
-    assert second == {"total": 1, "indexed": 0, "skipped": 1, "removed": 0, "failed": 0}
-    assert third == {"total": 1, "indexed": 1, "skipped": 0, "removed": 0, "failed": 0}
-    assert fourth == {"total": 0, "indexed": 0, "skipped": 0, "removed": 1, "failed": 0}
-    assert repository.all_documents() == []
+    assert first == {"total": 1, "indexed": 1, "failed": 0}
+    assert second == {"total": 1, "indexed": 1, "failed": 0}
+    assert "Two." in repository.all_sections()[0].text
 
 
-def test_parse_failure_is_reported_and_does_not_leave_old_body(tmp_path: Path) -> None:
+def test_parse_failure_is_reported_without_partial_document(tmp_path: Path) -> None:
     class FailingParser(BookishDocumentParser):
         def parse(self, source: str, *, document_id: str, kind: str):
             raise ValueError("broken bookish")
@@ -142,16 +135,8 @@ def test_parse_failure_is_reported_and_does_not_leave_old_body(tmp_path: Path) -
     source = tmp_path / "help"
     source.mkdir()
     document_path = source / "page.txt"
-    document_path.write_text("= Page =\n\nGood.\n", encoding="utf-8")
+    document_path.write_text("broken", encoding="utf-8")
     repository = DocumentRepository(tmp_path / "docs.db")
-    good = DocumentIndexer(
-        repository=repository,
-        parser=BookishDocumentParser(),
-        cache_directory=tmp_path / "cache",
-        token_counter=len,
-    )
-    good.index_all(source, houdini_version="22.0.429")
-    document_path.write_text("changed", encoding="utf-8")
     issues: list[tuple[str, str, str | None]] = []
     failing = DocumentIndexer(
         repository=repository,

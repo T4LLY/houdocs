@@ -86,8 +86,6 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     assert result["documents"] == {
         "total": 0,
         "indexed": 0,
-        "skipped": 0,
-        "removed": 0,
         "failed": 0,
     }
     assert result["runtime"] == {
@@ -108,12 +106,7 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
         "duplicates": 0,
         "failed": 0,
     }
-    assert result["search"] == {
-        "entries": 0,
-        "indexed": 0,
-        "skipped": 0,
-        "removed": 0,
-    }
+    assert result["search"] == {"entries": 0}
     assert Path(result["artifacts"]["node_unresolved"]).is_file()
     assert result["issue_counts"] == {"warnings": 1, "errors": 0}
     assert result["issues"][0]["kind"] == "node_parameter_introspection_error"
@@ -380,7 +373,7 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
     monkeypatch.setattr("houdocs.init.service.count_openai_tokens", len)
     monkeypatch.setattr(
         "houdocs.init.service.SearchIndexer.index_all",
-        lambda self, **kwargs: {"entries": 0, "indexed": 0, "skipped": 0, "removed": 0},
+        lambda self, **kwargs: {"entries": 0},
     )
     config = load_config(tmp_path / "config.toml", cwd=tmp_path)
     result = InitService(runtime=runtime, data_root=data_root).run(

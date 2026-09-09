@@ -67,9 +67,6 @@ class HybridSearchBackend:
     ) -> None:
         if not entries:
             return
-        existing_profiles = self._profiles_for_entry_ids(
-            [entry.id for entry in entries]
-        )
         grouped: dict[str, list[SearchEntry]] = {}
         for entry in entries:
             grouped.setdefault(entry.embedding_profile, []).append(entry)
@@ -81,16 +78,21 @@ class HybridSearchBackend:
                 embedding_progress=embedding_progress,
             )
 
-        moved: dict[str, list[str]] = {}
-        for entry in entries:
-            old_profile = existing_profiles.get(entry.id)
-            if old_profile and old_profile != entry.embedding_profile:
-                moved.setdefault(old_profile, []).append(entry.id)
-        for profile, entry_ids in moved.items():
-            self.dense.remove(profile, entry_ids)
-
-        fts_rowids = self._fts_rowids_for_entry_ids([entry.id for entry in entries])
+        entry_ids = [entry.id for entry in entries]
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing_profiles = self._profiles_for_entry_ids_in_connection(
+                connection, entry_ids
+            )
+            fts_rowids = self._fts_rowids_for_entry_ids_in_connection(
+                connection, entry_ids
+            )
+            moved: dict[str, list[str]] = {}
+            for entry in entries:
+                old_profile = existing_profiles.get(entry.id)
+                if old_profile and old_profile != entry.embedding_profile:
+                    moved.setdefault(old_profile, []).append(entry.id)
+
             if isinstance(self.dense, SQLiteVecIndex):
                 for profile, group in grouped.items():
                     self.dense.upsert_in_transaction(
@@ -204,18 +206,31 @@ class HybridSearchBackend:
     def remove(self, entry_ids: Sequence[str]) -> None:
         if not entry_ids:
             return
-        profiles = self._profiles_for_entry_ids(entry_ids)
-        fts_rowids = self._fts_rowids_for_entry_ids(entry_ids)
-        grouped: dict[str, list[str]] = {}
-        for entry_id, profile in profiles.items():
-            grouped.setdefault(profile, []).append(entry_id)
-        for profile, ids in grouped.items():
-            try:
-                self.dense.remove(profile, ids)
-            except HouDocsError as exc:
-                if exc.error.code != "dense_profile_missing":
-                    raise
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            profiles = self._profiles_for_entry_ids_in_connection(connection, entry_ids)
+            fts_rowids = self._fts_rowids_for_entry_ids_in_connection(
+                connection, entry_ids
+            )
+            grouped: dict[str, list[str]] = {}
+            for entry_id, profile in profiles.items():
+                grouped.setdefault(profile, []).append(entry_id)
+
+            if isinstance(self.dense, SQLiteVecIndex):
+                for profile, ids in grouped.items():
+                    try:
+                        self.dense.remove_in_transaction(connection, profile, ids)
+                    except HouDocsError as exc:
+                        if exc.error.code != "dense_profile_missing":
+                            raise
+            else:
+                for profile, ids in grouped.items():
+                    try:
+                        self.dense.remove(profile, ids)
+                    except HouDocsError as exc:
+                        if exc.error.code != "dense_profile_missing":
+                            raise
+
             for entry_id in entry_ids:
                 fts_rowid = fts_rowids.get(entry_id)
                 if fts_rowid is None:
@@ -317,34 +332,48 @@ class HybridSearchBackend:
         return [str(row["embedding_profile_id"]) for row in rows]
 
     def _profiles_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, str]:
+        with self._connect() as connection:
+            return self._profiles_for_entry_ids_in_connection(connection, entry_ids)
+
+    def _profiles_for_entry_ids_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        entry_ids: Sequence[str],
+    ) -> dict[str, str]:
         if not entry_ids:
             return {}
         found: dict[str, str] = {}
         for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
             batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
-            with self._connect() as connection:
-                rows = connection.execute(
-                    f"SELECT entry_id, embedding_profile_id FROM search_entries WHERE entry_id IN ({placeholders})",
-                    tuple(batch),
-                ).fetchall()
+            rows = connection.execute(
+                f"SELECT entry_id, embedding_profile_id FROM search_entries WHERE entry_id IN ({placeholders})",
+                tuple(batch),
+            ).fetchall()
             found.update(
                 {str(row["entry_id"]): str(row["embedding_profile_id"]) for row in rows}
             )
         return found
 
     def _fts_rowids_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, int]:
+        with self._connect() as connection:
+            return self._fts_rowids_for_entry_ids_in_connection(connection, entry_ids)
+
+    def _fts_rowids_for_entry_ids_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        entry_ids: Sequence[str],
+    ) -> dict[str, int]:
         if not entry_ids:
             return {}
         found: dict[str, int] = {}
         for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
             batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
-            with self._connect() as connection:
-                rows = connection.execute(
-                    f"SELECT entry_id, fts_rowid FROM search_fts_rows WHERE entry_id IN ({placeholders})",
-                    tuple(batch),
-                ).fetchall()
+            rows = connection.execute(
+                f"SELECT entry_id, fts_rowid FROM search_fts_rows WHERE entry_id IN ({placeholders})",
+                tuple(batch),
+            ).fetchall()
             found.update({str(row["entry_id"]): int(row["fts_rowid"]) for row in rows})
         return found
 

@@ -9,6 +9,7 @@ import pytest
 
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
+from houdocs.search.dense import SQLiteVecIndex
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
 from houdocs.search.models import SearchEntry, SearchHit
@@ -37,6 +38,65 @@ class FakeDense:
 
     def search(self, profile, query_vector, *, namespaces, top_k):
         return list(reversed(self.entries))[:top_k]
+
+
+class TransactionalDense(SQLiteVecIndex):
+    """SQLite-backed test double that participates in the caller transaction."""
+
+    def upsert(self, profile, entries, vectors_by_hash):
+        raise AssertionError("transactional dense writes must use the caller connection")
+
+    def upsert_in_transaction(self, connection, profile, entries, vectors_by_hash):
+        del vectors_by_hash
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_dense_vectors (
+                embedding_profile_id TEXT NOT NULL,
+                entry_id TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                PRIMARY KEY (embedding_profile_id, entry_id)
+            )
+            """
+        )
+        connection.executemany(
+            "DELETE FROM test_dense_vectors WHERE embedding_profile_id = ? AND entry_id = ?",
+            [(profile, entry.id) for entry in entries],
+        )
+        connection.executemany(
+            "INSERT INTO test_dense_vectors(embedding_profile_id, entry_id, namespace) VALUES (?, ?, ?)",
+            [(profile, entry.id, entry.namespace) for entry in entries],
+        )
+
+    def remove(self, profile, entry_ids):
+        raise AssertionError("transactional dense writes must use the caller connection")
+
+    def remove_in_transaction(self, connection, profile, entry_ids):
+        connection.executemany(
+            "DELETE FROM test_dense_vectors WHERE embedding_profile_id = ? AND entry_id = ?",
+            [(profile, entry_id) for entry_id in entry_ids],
+        )
+
+
+class FailingConnection:
+    def __init__(self, connection, *, sql_fragment: str, message: str) -> None:
+        self.connection = connection
+        self.sql_fragment = sql_fragment
+        self.message = message
+
+    def __enter__(self):
+        self.connection.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self.connection.__exit__(exc_type, exc, tb)
+
+    def execute(self, sql, parameters=()):
+        if self.sql_fragment in sql:
+            raise sqlite3.OperationalError(self.message)
+        return self.connection.execute(sql, parameters)
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
 
 
 def _section(
@@ -221,26 +281,15 @@ def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
     backend = HybridSearchBackend(database=database, embeddings=FakeEmbeddings())
     original_connect = backend._connect
 
-    class FailingConnection:
-        def __init__(self) -> None:
-            self.connection = original_connect()
-
-        def __enter__(self):
-            self.connection.__enter__()
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return self.connection.__exit__(exc_type, exc, tb)
-
-        def execute(self, sql, parameters=()):
-            if "INSERT INTO search_entries" in sql:
-                raise sqlite3.OperationalError("forced entry write failure")
-            return self.connection.execute(sql, parameters)
-
-        def __getattr__(self, name):
-            return getattr(self.connection, name)
-
-    monkeypatch.setattr(backend, "_connect", FailingConnection)
+    monkeypatch.setattr(
+        backend,
+        "_connect",
+        lambda: FailingConnection(
+            original_connect(),
+            sql_fragment="INSERT INTO search_entries",
+            message="forced entry write failure",
+        ),
+    )
 
     with pytest.raises(sqlite3.OperationalError, match="forced entry write failure"):
         backend.upsert(
@@ -252,6 +301,106 @@ def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
         entries = connection.execute("SELECT * FROM search_entries").fetchall()
     assert profiles == []
     assert entries == []
+
+
+def test_search_profile_move_rolls_back_dense_and_metadata_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=TransactionalDense(database),
+    )
+    backend.upsert(
+        [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
+    )
+    original_connect = backend._connect
+
+    monkeypatch.setattr(
+        backend,
+        "_connect",
+        lambda: FailingConnection(
+            original_connect(),
+            sql_fragment="INSERT INTO search_entries",
+            message="forced entry write failure",
+        ),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="forced entry write failure"):
+        backend.upsert(
+            [
+                SearchEntry(
+                    "entry", "docs", "source", "alpha", "hash", "p2", 1, {}
+                )
+            ]
+        )
+
+    with original_connect() as connection:
+        dense_rows = connection.execute(
+            "SELECT embedding_profile_id, entry_id FROM test_dense_vectors ORDER BY embedding_profile_id"
+        ).fetchall()
+        stored = connection.execute(
+            "SELECT embedding_profile_id FROM search_entries WHERE entry_id = 'entry'"
+        ).fetchone()
+        cached_p2 = connection.execute(
+            "SELECT COUNT(*) FROM embedding_cache WHERE embedding_profile_id = 'p2' AND content_hash = 'hash'"
+        ).fetchone()[0]
+
+    assert [(row["embedding_profile_id"], row["entry_id"]) for row in dense_rows] == [
+        ("p1", "entry")
+    ]
+    assert stored["embedding_profile_id"] == "p1"
+    assert cached_p2 == 1
+
+
+def test_search_remove_rolls_back_dense_and_metadata_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "search.db"
+    backend = HybridSearchBackend(
+        database=database,
+        embeddings=FakeEmbeddings(),
+        dense_index=TransactionalDense(database),
+    )
+    backend.upsert(
+        [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
+    )
+    original_connect = backend._connect
+
+    monkeypatch.setattr(
+        backend,
+        "_connect",
+        lambda: FailingConnection(
+            original_connect(),
+            sql_fragment="DELETE FROM search_entries",
+            message="forced entry delete failure",
+        ),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="forced entry delete failure"):
+        backend.remove(["entry"])
+
+    with original_connect() as connection:
+        dense_rows = connection.execute(
+            "SELECT embedding_profile_id, entry_id FROM test_dense_vectors"
+        ).fetchall()
+        stored = connection.execute(
+            "SELECT embedding_profile_id FROM search_entries WHERE entry_id = 'entry'"
+        ).fetchone()
+        content = connection.execute(
+            "SELECT content FROM search_content WHERE entry_id = 'entry'"
+        ).fetchone()
+        fts_rows = connection.execute(
+            "SELECT COUNT(*) FROM search_fts WHERE entry_id = 'entry'"
+        ).fetchone()[0]
+
+    assert [(row["embedding_profile_id"], row["entry_id"]) for row in dense_rows] == [
+        ("p1", "entry")
+    ]
+    assert stored["embedding_profile_id"] == "p1"
+    assert content["content"] == "alpha"
+    assert fts_rows == 1
 
 
 def test_search_skips_stale_hits_without_aborting_current_results(

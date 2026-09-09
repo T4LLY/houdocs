@@ -10,6 +10,7 @@ from houdocs.docs.header import parse_page_properties
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
 from houdocs.node.index import NodeIndexer
+from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.node.repository import NodeRepository
 from houdocs.python_docs.index import PythonIndexer
 from houdocs.python_docs.parser import _group_signatures
@@ -19,6 +20,38 @@ from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.read import VexDocumentReader
 from houdocs.vex_docs.repository import VexRepository
 
+
+
+def _runtime_nodes(rows: tuple[dict[str, object], ...]) -> tuple[RuntimeNodeSnapshot, ...]:
+    result: list[RuntimeNodeSnapshot] = []
+    for row in rows:
+        parameters = tuple(
+            RuntimeParameterSnapshot(
+                ordinal=raw.get("parameter_ordinal") if isinstance(raw.get("parameter_ordinal"), int) else None,
+                parm_id=str(raw.get("id") or ""),
+                label=str(raw.get("label") or ""),
+                folder_path=tuple(raw.get("folder_path") or ()),
+                parm_type=str(raw.get("type") or ""),
+                multiparm=bool(raw.get("is_multiparm")),
+            )
+            for raw in row.get("parameters", [])
+            if isinstance(raw, dict)
+        )
+        result.append(
+            RuntimeNodeSnapshot(
+                category=str(row.get("category") or ""),
+                internal_name=str(row.get("name") or ""),
+                canonical_name=str(row.get("canonical_name") or ""),
+                min_inputs=row.get("min_inputs") if isinstance(row.get("min_inputs"), int) else None,
+                max_inputs=row.get("max_inputs") if isinstance(row.get("max_inputs"), int) else None,
+                max_outputs=row.get("max_outputs") if isinstance(row.get("max_outputs"), int) else None,
+                parameters=parameters,
+                parameter_error=(
+                    str(row["parameter_error"]) if row.get("parameter_error") else None
+                ),
+            )
+        )
+    return tuple(result)
 
 def _index_base_documents(source: Path, state: Path) -> DocumentRepository:
     initialize_docs_database(state / "docs.db")
@@ -112,7 +145,7 @@ Unknown:
         docs_directory=state / "docs",
         report_directory=state / "reports",
     ).index_all(
-        runtime_rows,
+        _runtime_nodes(runtime_rows),
         houdini_version="22.0.429",
         on_warning=lambda kind, detail, document, symbol: warnings.append(
             (kind, symbol)
@@ -178,7 +211,7 @@ Legacy Label:
         },
     )
 
-    first = indexer.index_all(runtime_rows, houdini_version="22.0.429")
+    first = indexer.index_all(_runtime_nodes(runtime_rows), houdini_version="22.0.429")
     unresolved_path = Path(str(first["unresolved_file"]))
     payload = json.loads(unresolved_path.read_text(encoding="utf-8"))
     payload["overrides"]["parameters"] = [
@@ -190,7 +223,7 @@ Legacy Label:
     ]
     unresolved_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    second = indexer.index_all(runtime_rows, houdini_version="22.0.429")
+    second = indexer.index_all(_runtime_nodes(runtime_rows), houdini_version="22.0.429")
 
     assert second["parameter_resolved"] == 1
     assert second["parameter_resolved_by_manual"] == 1

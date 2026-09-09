@@ -11,7 +11,40 @@ from typer.testing import CliRunner
 from houdocs.cli import _init_summary, app
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.repository import DocumentRepository
+from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 from houdocs.paths import VersionPaths
+
+
+def _runtime_nodes(rows: tuple[dict[str, object], ...]) -> tuple[RuntimeNodeSnapshot, ...]:
+    result: list[RuntimeNodeSnapshot] = []
+    for row in rows:
+        parameters = tuple(
+            RuntimeParameterSnapshot(
+                ordinal=raw.get("parameter_ordinal") if isinstance(raw.get("parameter_ordinal"), int) else None,
+                parm_id=str(raw.get("id") or ""),
+                label=str(raw.get("label") or ""),
+                folder_path=tuple(raw.get("folder_path") or ()),
+                parm_type=str(raw.get("type") or ""),
+                multiparm=bool(raw.get("is_multiparm")),
+            )
+            for raw in row.get("parameters", [])
+            if isinstance(raw, dict)
+        )
+        result.append(
+            RuntimeNodeSnapshot(
+                category=str(row.get("category") or ""),
+                internal_name=str(row.get("name") or ""),
+                canonical_name=str(row.get("canonical_name") or ""),
+                min_inputs=row.get("min_inputs") if isinstance(row.get("min_inputs"), int) else None,
+                max_inputs=row.get("max_inputs") if isinstance(row.get("max_inputs"), int) else None,
+                max_outputs=row.get("max_outputs") if isinstance(row.get("max_outputs"), int) else None,
+                parameters=parameters,
+                parameter_error=(
+                    str(row["parameter_error"]) if row.get("parameter_error") else None
+                ),
+            )
+        )
+    return tuple(result)
 
 
 runner = CliRunner()
@@ -345,7 +378,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_cached_source
         repository=NodeRepository(paths.database),
         docs_directory=paths.docs,
         report_directory=paths.reports,
-    ).index_all(runtime_rows, houdini_version="22.0.429")
+    ).index_all(_runtime_nodes(runtime_rows), houdini_version="22.0.429")
 
     unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
     unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))
@@ -505,7 +538,7 @@ def test_init_import_assist_failure_preserves_report_and_node_metadata(
         repository=NodeRepository(paths.database),
         docs_directory=paths.docs,
         report_directory=paths.reports,
-    ).index_all(runtime_rows, houdini_version="22.0.429")
+    ).index_all(_runtime_nodes(runtime_rows), houdini_version="22.0.429")
 
     unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
     unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))

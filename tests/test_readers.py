@@ -19,6 +19,8 @@ from houdocs.node.models import (
     NodePort,
     NodeRelated,
     NodeTypeDocument,
+    RuntimeNodeSnapshot,
+    RuntimeParameterSnapshot,
 )
 from houdocs.node.read import NodeReader
 from houdocs.node.repository import NodeRepository
@@ -28,6 +30,38 @@ from houdocs.python_docs.repository import PythonRepository
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.read import VexDocumentReader
 from houdocs.vex_docs.repository import VexRepository
+
+
+def _runtime_nodes(rows: tuple[dict[str, object], ...]) -> tuple[RuntimeNodeSnapshot, ...]:
+    result: list[RuntimeNodeSnapshot] = []
+    for row in rows:
+        parameters = tuple(
+            RuntimeParameterSnapshot(
+                ordinal=raw.get("parameter_ordinal") if isinstance(raw.get("parameter_ordinal"), int) else None,
+                parm_id=str(raw.get("id") or ""),
+                label=str(raw.get("label") or ""),
+                folder_path=tuple(raw.get("folder_path") or ()),
+                parm_type=str(raw.get("type") or ""),
+                multiparm=bool(raw.get("is_multiparm")),
+            )
+            for raw in row.get("parameters", [])
+            if isinstance(raw, dict)
+        )
+        result.append(
+            RuntimeNodeSnapshot(
+                category=str(row.get("category") or ""),
+                internal_name=str(row.get("name") or ""),
+                canonical_name=str(row.get("canonical_name") or ""),
+                min_inputs=row.get("min_inputs") if isinstance(row.get("min_inputs"), int) else None,
+                max_inputs=row.get("max_inputs") if isinstance(row.get("max_inputs"), int) else None,
+                max_outputs=row.get("max_outputs") if isinstance(row.get("max_outputs"), int) else None,
+                parameters=parameters,
+                parameter_error=(
+                    str(row["parameter_error"]) if row.get("parameter_error") else None
+                ),
+            )
+        )
+    return tuple(result)
 
 
 def _repository(database: Path) -> DocumentRepository:
@@ -228,7 +262,7 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
         docs_directory=state / "docs",
         report_directory=state / "reports",
     ).index_all(
-        (
+        _runtime_nodes((
             {
                 "category": "Sop",
                 "name": "example",
@@ -255,7 +289,7 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
                     },
                 ],
             },
-        ),
+        )),
         houdini_version="22.0.429",
     )
 

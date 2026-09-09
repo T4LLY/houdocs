@@ -6,7 +6,11 @@ from pathlib import Path, PurePosixPath
 from houdocs.docs.models import Document
 from houdocs.errors import HouDocsError
 from houdocs.docs.repository import DocumentRepository
-from houdocs.node.models import RuntimeNodeType, RuntimeParameter
+from houdocs.node.models import (
+    RuntimeNodeSnapshot,
+    RuntimeNodeType,
+    RuntimeParameter,
+)
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
 from houdocs.node.repository import NodeRecord, NodeRepository
 from houdocs.node.resolver import NodeTypeCatalog, build_node_metadata
@@ -31,7 +35,7 @@ class NodeIndexer:
 
     def index_all(
         self,
-        runtime_rows: tuple[dict[str, object], ...],
+        runtime_nodes: tuple[RuntimeNodeSnapshot, ...],
         *,
         houdini_version: str,
         on_warning: IssueCallback | None = None,
@@ -40,7 +44,7 @@ class NodeIndexer:
         write_report: bool = True,
         fail_on_error: bool = False,
     ) -> dict[str, int | str]:
-        catalog = NodeTypeCatalog(_runtime_node_types(runtime_rows))
+        catalog = NodeTypeCatalog(_runtime_node_types(runtime_nodes))
         unresolved_file = unresolved_path(self.report_directory, houdini_version)
         active_overrides = overrides if overrides is not None else load_overrides(unresolved_file)
         records: list[NodeRecord] = []
@@ -176,51 +180,35 @@ class NodeIndexer:
             )
 
 
-def _runtime_node_types(rows: tuple[dict[str, object], ...]) -> tuple[RuntimeNodeType, ...]:
+def _runtime_node_types(rows: tuple[RuntimeNodeSnapshot, ...]) -> tuple[RuntimeNodeType, ...]:
     nodes: list[RuntimeNodeType] = []
     for row in rows:
-        category = _string(row.get("category"))
-        name = _string(row.get("name"))
-        canonical = _string(row.get("canonical_name"))
-        if not category or not name or not canonical:
-            continue
-        context = context_for_category(category)
+        context = context_for_category(row.category)
         if context is None:
             continue
-        parameters: list[RuntimeParameter] = []
-        raw_parameters = row.get("parameters")
-        if isinstance(raw_parameters, list):
-            for raw in raw_parameters:
-                if not isinstance(raw, dict):
-                    continue
-                parm_id = _string(raw.get("id"))
-                ordinal = raw.get("parameter_ordinal")
-                if not parm_id or not isinstance(ordinal, int):
-                    continue
-                folder_path = raw.get("folder_path")
-                parameters.append(
-                    RuntimeParameter(
-                        ordinal=ordinal,
-                        parm_id=parm_id,
-                        label=_string(raw.get("label")) or "",
-                        folder_path=tuple(
-                            str(value) for value in folder_path if isinstance(value, str)
-                        ) if isinstance(folder_path, list) else (),
-                        parm_type=_string(raw.get("type")) or "",
-                        multiparm=bool(raw.get("is_multiparm")),
-                    )
-                )
+        parameters = tuple(
+            RuntimeParameter(
+                ordinal=parameter.ordinal,
+                parm_id=parameter.parm_id,
+                label=parameter.label,
+                folder_path=parameter.folder_path,
+                parm_type=parameter.parm_type,
+                multiparm=parameter.multiparm,
+            )
+            for parameter in row.parameters
+            if parameter.parm_id and parameter.ordinal is not None
+        )
         nodes.append(
             RuntimeNodeType(
                 context=context,
-                requested_internal_name=name,
-                category=category,
-                internal_name=name,
-                canonical_name=canonical,
-                min_inputs=_integer(row.get("min_inputs")),
-                max_inputs=_integer(row.get("max_inputs")),
-                max_outputs=_integer(row.get("max_outputs")),
-                parameters=tuple(parameters),
+                requested_internal_name=row.internal_name,
+                category=row.category,
+                internal_name=row.internal_name,
+                canonical_name=row.canonical_name,
+                min_inputs=row.min_inputs,
+                max_inputs=row.max_inputs,
+                max_outputs=row.max_outputs,
+                parameters=parameters,
             )
         )
     return tuple(nodes)
@@ -239,7 +227,3 @@ def _issue(
 
 def _string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
-
-
-def _integer(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None

@@ -62,6 +62,16 @@ Initialization SHALL collect runtime node types and their parameter templates, i
 - **THEN** initialization continues collecting other node types
 - **AND** records that node failure as an initialization warning
 
+
+### Requirement: Validate runtime metadata at the runtime boundary
+
+The Houdini probe payload SHALL be validated and converted to typed runtime node and parameter records before specialized indexers consume it. Specialized indexers SHALL NOT interpret raw probe dictionaries. The original probe payload MAY still be persisted unchanged as runtime evidence. Malformed nested node or parameter metadata SHALL fail initialization with `runtime_probe_invalid`.
+
+#### Scenario: Runtime returns malformed parameter metadata
+- **WHEN** a runtime parameter record has an invalid field shape
+- **THEN** initialization fails with `runtime_probe_invalid` before Node indexing begins
+- **AND** the Node indexer does not receive the malformed raw record
+
 ### Requirement: Verify the actual runtime version
 
 The runtime-reported Houdini version SHALL be checked against an explicitly or configurationally requested version before version-specific derived state is written.

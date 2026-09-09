@@ -6,6 +6,7 @@ from pathlib import Path
 from houdocs.config import load_config
 from houdocs.init.runtime import HoudiniInstallation, RuntimeSnapshot
 from houdocs.init.service import InitService
+from houdocs.node.models import RuntimeNodeSnapshot, RuntimeParameterSnapshot
 
 
 class FakeRuntime:
@@ -61,7 +62,30 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     snapshot = RuntimeSnapshot(
         houdini_version="22.0.429",
         help_directories=(help_root,),
-        node_types=tuple(payload["node_types"]),
+        node_types=(
+            RuntimeNodeSnapshot(
+                category="Sop",
+                internal_name="good",
+                canonical_name="Sop/good",
+                min_inputs=None,
+                max_inputs=None,
+                max_outputs=None,
+                parameters=(
+                    RuntimeParameterSnapshot(0, "strength", "", (), "", False),
+                ),
+                parameter_error=None,
+            ),
+            RuntimeNodeSnapshot(
+                category="Sop",
+                internal_name="bad",
+                canonical_name="Sop/bad",
+                min_inputs=None,
+                max_inputs=None,
+                max_outputs=None,
+                parameters=(),
+                parameter_error="RuntimeError: broken template",
+            ),
+        ),
         payload=payload,
     )
     runtime = FakeRuntime(installation, snapshot)
@@ -328,6 +352,20 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
             }
         ],
     }
+    runtime_node = RuntimeNodeSnapshot(
+        category="Sop",
+        internal_name="example",
+        canonical_name="Sop/example",
+        min_inputs=None,
+        max_inputs=None,
+        max_outputs=None,
+        parameters=(
+            RuntimeParameterSnapshot(
+                0, "current_name", "Current Label", (), "String", False
+            ),
+        ),
+        parameter_error=None,
+    )
     payload = {
         "schema_version": 1,
         "houdini_version": "22.0.429",
@@ -338,7 +376,7 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
     snapshot = RuntimeSnapshot(
         houdini_version="22.0.429",
         help_directories=(help_root,),
-        node_types=(runtime_row,),
+        node_types=(runtime_node,),
         payload=payload,
     )
     runtime = FakeRuntime(installation, snapshot)
@@ -361,7 +399,7 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
         repository=NodeRepository(paths.database),
         docs_directory=paths.docs,
         report_directory=paths.reports,
-    ).index_all((runtime_row,), houdini_version="22.0.429")
+    ).index_all((runtime_node,), houdini_version="22.0.429")
 
     unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
     unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))

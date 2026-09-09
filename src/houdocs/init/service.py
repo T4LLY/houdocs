@@ -212,13 +212,11 @@ class InitService:
         snapshot: RuntimeSnapshot, reporter: InitReporter
     ) -> None:
         for node in snapshot.node_types:
-            parameter_error = node.get("parameter_error")
-            if not isinstance(parameter_error, str) or not parameter_error:
+            if not node.parameter_error:
                 continue
-            symbol = node.get("canonical_name")
             reporter.warning(
                 "node_parameter_introspection_error",
-                parameter_error,
-                symbol=symbol if isinstance(symbol, str) else None,
+                node.parameter_error,
+                symbol=node.canonical_name,
             )
 

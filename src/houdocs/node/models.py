@@ -48,6 +48,28 @@ class NodeDocSource:
 
 
 @dataclass(frozen=True)
+class RuntimeParameterSnapshot:
+    ordinal: int | None
+    parm_id: str
+    label: str
+    folder_path: tuple[str, ...]
+    parm_type: str
+    multiparm: bool
+
+
+@dataclass(frozen=True)
+class RuntimeNodeSnapshot:
+    category: str
+    internal_name: str
+    canonical_name: str
+    min_inputs: int | None
+    max_inputs: int | None
+    max_outputs: int | None
+    parameters: tuple[RuntimeParameterSnapshot, ...]
+    parameter_error: str | None
+
+
+@dataclass(frozen=True)
 class RuntimeParameter:
     ordinal: int
     parm_id: str

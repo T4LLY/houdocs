@@ -5,8 +5,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-from houdocs.db.connection import connect
-from houdocs.db.schema import ensure_docs_schema
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
 from houdocs.node.models import (
     NodeParameter,
@@ -30,19 +29,10 @@ NodeRecord = tuple[
 class NodeRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
-        try:
-            with connect(database) as connection:
-                ensure_docs_schema(connection)
-        except sqlite3.Error as exc:
-            raise HouDocsError(
-                "docs_database_error",
-                f"Unable to initialize node documentation index: {database}",
-                detail=str(exc),
-            ) from exc
 
     def replace_all(self, records: Sequence[NodeRecord]) -> None:
         try:
-            with connect(self.database) as connection:
+            with connect_writable(self.database) as connection:
                 connection.execute("DELETE FROM node_documents")
                 connection.executemany(
                     """
@@ -82,7 +72,7 @@ class NodeRepository:
     def apply_parameter_overrides(self, overrides: Sequence[dict[str, object]]) -> int:
         """Apply saved assist mappings without re-indexing node documentation."""
         try:
-            with connect(self.database) as connection:
+            with connect_writable(self.database) as connection:
                 seen: set[tuple[str, int]] = set()
                 for override in overrides:
                     document, doc_ordinal, parm_ids = _parameter_override_fields(
@@ -139,7 +129,7 @@ class NodeRepository:
 
     def resolve(self, node_type: str) -> tuple[str, dict[str, object]] | None:
         key = node_type.strip()
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute(
                 """
                 SELECT document_id, metadata_json
@@ -170,7 +160,7 @@ class NodeRepository:
         return str(row["document_id"]), payload
 
     def count(self) -> int:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM node_documents").fetchone()
         return int(row[0])
 

@@ -7,13 +7,25 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
 from houdocs.search.dense import SQLiteVecIndex
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
 from houdocs.search.models import SearchEntry, SearchHit
+from houdocs.search.store import initialize_search_database
 from houdocs.search.service import DocumentSearchService
+
+
+def _docs(database: Path) -> DocumentRepository:
+    initialize_docs_database(database)
+    return DocumentRepository(database)
+
+
+def _backend(**kwargs) -> HybridSearchBackend:
+    initialize_search_database(kwargs["database"])
+    return HybridSearchBackend(**kwargs)
 
 
 def _test_token_count(text: str) -> int:
@@ -121,7 +133,7 @@ def _section(
 def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
     tmp_path: Path,
 ) -> None:
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     document = Document(
         document_id="doc",
         title="Page",
@@ -138,7 +150,7 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
         ],
     )
     dense = FakeDense()
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=tmp_path / "search.db",
         embeddings=FakeEmbeddings(),
         dense_index=dense,
@@ -165,11 +177,11 @@ def test_hybrid_search_keeps_rrf_and_search_contract_has_no_body(
 def test_search_indexer_indexes_all_entries_each_run(
     tmp_path: Path,
 ) -> None:
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     document = Document("doc", "Page", "page.txt", "concept", "22.0.429", "h")
     docs.replace_document(document, [_section("doc", 0, "Alpha", "alpha")])
     dense = FakeDense()
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=tmp_path / "search.db",
         embeddings=FakeEmbeddings(),
         dense_index=dense,
@@ -199,13 +211,13 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
             del texts, profile
             raise RuntimeError("embedding service unavailable")
 
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     docs.replace_document(
         Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
         [_section("doc", 0, "Alpha", "alpha")],
     )
     database = tmp_path / "search.db"
-    failed_backend = HybridSearchBackend(
+    failed_backend = _backend(
         database=database,
         embeddings=FailingEmbeddings(),
         dense_index=FakeDense(),
@@ -224,7 +236,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
     dense = FakeDense()
     retry = SearchIndexer(
         documents=docs,
-        backend=HybridSearchBackend(
+        backend=_backend(
             database=database,
             embeddings=FakeEmbeddings(),
             dense_index=dense,
@@ -239,7 +251,7 @@ def test_search_retries_entries_after_embedding_failure(tmp_path: Path) -> None:
 
 def test_search_fts_rows_track_entry_rowids_for_repeated_upserts(tmp_path: Path) -> None:
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=database,
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
@@ -249,7 +261,7 @@ def test_search_fts_rows_track_entry_rowids_for_repeated_upserts(tmp_path: Path)
     backend.upsert([entry])
     backend.upsert([entry])
 
-    with backend._connect() as connection:
+    with backend._read() as connection:
         mapped = connection.execute(
             "SELECT fts_rowid FROM search_fts_rows WHERE entry_id = 'entry'"
         ).fetchone()
@@ -264,12 +276,12 @@ def test_search_upsert_rolls_back_vectors_when_entry_write_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(database=database, embeddings=FakeEmbeddings())
-    original_connect = backend._connect
+    backend = _backend(database=database, embeddings=FakeEmbeddings())
+    original_connect = backend._write
 
     monkeypatch.setattr(
         backend,
-        "_connect",
+        "_write",
         lambda: FailingConnection(
             original_connect(),
             sql_fragment="INSERT INTO search_entries",
@@ -293,7 +305,7 @@ def test_search_profile_move_rolls_back_dense_and_metadata_together(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=database,
         embeddings=FakeEmbeddings(),
         dense_index=TransactionalDense(database),
@@ -301,11 +313,11 @@ def test_search_profile_move_rolls_back_dense_and_metadata_together(
     backend.upsert(
         [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
     )
-    original_connect = backend._connect
+    original_connect = backend._write
 
     monkeypatch.setattr(
         backend,
-        "_connect",
+        "_write",
         lambda: FailingConnection(
             original_connect(),
             sql_fragment="INSERT INTO search_entries",
@@ -344,7 +356,7 @@ def test_search_remove_rolls_back_dense_and_metadata_together(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=database,
         embeddings=FakeEmbeddings(),
         dense_index=TransactionalDense(database),
@@ -352,11 +364,11 @@ def test_search_remove_rolls_back_dense_and_metadata_together(
     backend.upsert(
         [SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})]
     )
-    original_connect = backend._connect
+    original_connect = backend._write
 
     monkeypatch.setattr(
         backend,
-        "_connect",
+        "_write",
         lambda: FailingConnection(
             original_connect(),
             sql_fragment="DELETE FROM search_entries",
@@ -400,7 +412,7 @@ def test_search_skips_stale_hits_without_aborting_current_results(
                 SearchHit("current", "document", "doc#0", 0.5, {}, token_count=10),
             ]
 
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     docs.replace_document(
         Document("doc", "Page", "page.txt", "concept", "22.0.429", "h"),
         [_section("doc", 0, "Alpha", "alpha")],
@@ -429,7 +441,7 @@ def test_search_index_reuses_embedding_for_duplicate_content_hashes(
                 dtype=np.float32,
             )
 
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     docs.replace_document(
         Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
         [_section("doc-a", 0, "A", "shared content")],
@@ -439,7 +451,7 @@ def test_search_index_reuses_embedding_for_duplicate_content_hashes(
         [_section("doc-b", 0, "B", "shared content")],
     )
     embeddings = RecordingEmbeddings()
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=tmp_path / "search.db",
         embeddings=embeddings,
         dense_index=FakeDense(),
@@ -471,7 +483,7 @@ def test_search_index_embeds_entries_per_document(tmp_path: Path) -> None:
                 dtype=np.float32,
             )
 
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     docs.replace_document(
         Document("doc-a", "A", "a.txt", "concept", "22.0.429", "ha"),
         [
@@ -487,7 +499,7 @@ def test_search_index_embeds_entries_per_document(tmp_path: Path) -> None:
         ],
     )
     embeddings = RecordingEmbeddings()
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=tmp_path / "search.db",
         embeddings=embeddings,
         dense_index=FakeDense(),
@@ -508,16 +520,16 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
     monkeypatch,
 ) -> None:
     import houdocs.search.hybrid as hybrid_module
-    from houdocs.db.connection import connect
+    from houdocs.db.connection import connect_writable
 
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=database,
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
     )
     entry_ids = [f"entry-{index}" for index in range(5)]
-    with connect(database) as connection:
+    with connect_writable(database) as connection:
         for entry_id in entry_ids:
             connection.execute(
                 """
@@ -535,7 +547,7 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
         connection.commit()
 
     monkeypatch.setattr(hybrid_module, "_SQLITE_IN_BATCH_SIZE", 2)
-    original_connect = backend._connect
+    original_connect = backend._read
     parameter_counts: list[int] = []
 
     class GuardedConnection:
@@ -554,7 +566,7 @@ def test_large_entry_id_lookups_are_batched_for_sqlite_variable_limits(
                 raise AssertionError("lookup exceeded the configured SQLite batch size")
             return self.connection.execute(sql, parameters)
 
-    monkeypatch.setattr(backend, "_connect", lambda: GuardedConnection())
+    monkeypatch.setattr(backend, "_read", lambda: GuardedConnection())
 
     profiles = backend._profiles_for_entry_ids(entry_ids)
     loaded = backend._load_entries(entry_ids)
@@ -571,7 +583,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     from houdocs.vex_docs.repository import VexRepository
 
     database = tmp_path / "docs.db"
-    docs = DocumentRepository(database)
+    docs = _docs(database)
     docs.replace_document(
         Document("concept", "Overview", "overview.txt", "concept", "22.0.429", "hc"),
         [_section("concept", 0, "Overview", "general documentation")],
@@ -670,7 +682,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
         ]
     )
 
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=tmp_path / "search.db",
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
@@ -690,7 +702,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert backend.entry_ids("hom") == ["hom:hou.Node", "hom:hou.Node.setInput"]
     assert backend.entry_ids("vex") == ["vex:xyzdist"]
 
-    with backend._connect() as connection:
+    with backend._read() as connection:
         hom_member = connection.execute(
             "SELECT content FROM search_content WHERE entry_id = ?",
             ("hom:hou.Node.setInput",),
@@ -714,7 +726,7 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
 def test_search_output_collapses_document_heading_metadata_to_path(
     tmp_path: Path,
 ) -> None:
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     section = DocumentSection(
         section_id="doc#0",
         document_id="doc",
@@ -769,7 +781,7 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
     from houdocs.vex_docs.repository import VexRepository
 
     database = tmp_path / "docs.db"
-    docs = DocumentRepository(database)
+    docs = _docs(database)
     docs.replace_document(
         Document("hom-doc", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429", "hh"),
         [],
@@ -851,11 +863,11 @@ def test_search_output_uses_symbol_and_function_paths(tmp_path: Path) -> None:
 
 
 def test_load_entries_raises_on_corrupt_metadata_json(tmp_path: Path) -> None:
-    from houdocs.db.connection import connect
+    from houdocs.db.connection import connect_writable
     from houdocs.errors import HouDocsError
 
     database = tmp_path / "search.db"
-    backend = HybridSearchBackend(
+    backend = _backend(
         database=database,
         embeddings=FakeEmbeddings(),
         dense_index=FakeDense(),
@@ -863,7 +875,7 @@ def test_load_entries_raises_on_corrupt_metadata_json(tmp_path: Path) -> None:
     entry = SearchEntry("entry", "docs", "source", "alpha", "hash", "p1", 1, {})
     backend.upsert([entry])
 
-    with connect(database) as connection:
+    with connect_writable(database) as connection:
         connection.execute(
             "UPDATE search_entries SET metadata_json = ? WHERE entry_id = ?",
             ("not valid json{", "entry"),
@@ -904,7 +916,7 @@ def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> N
             self.namespaces = list(namespaces)
             return []
 
-    docs = DocumentRepository(tmp_path / "docs.db")
+    docs = _docs(tmp_path / "docs.db")
     backend = RecordingBackend()
     service = DocumentSearchService(
         repository=docs,

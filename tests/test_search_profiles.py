@@ -6,6 +6,7 @@ import numpy as np
 
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.models import SearchEntry
+from houdocs.search.store import initialize_search_database
 
 
 class FakeEmbeddings:
@@ -37,8 +38,10 @@ class ProfileDense:
 def test_search_fuses_dense_candidates_from_all_current_profiles(
     tmp_path: Path,
 ) -> None:
+    database = tmp_path / "search.db"
+    initialize_search_database(database)
     backend = HybridSearchBackend(
-        database=tmp_path / "search.db",
+        database=database,
         embeddings=FakeEmbeddings(),
         dense_index=ProfileDense(),
     )

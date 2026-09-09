@@ -5,8 +5,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-from houdocs.db.connection import connect
-from houdocs.db.schema import ensure_docs_schema
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.errors import HouDocsError
 
@@ -14,21 +13,15 @@ from houdocs.errors import HouDocsError
 class DocumentRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
-        try:
-            with self._connect() as connection:
-                ensure_docs_schema(connection)
-        except sqlite3.Error as exc:
-            raise HouDocsError(
-                "docs_database_error",
-                f"Unable to initialize documentation database: {database}",
-                detail=str(exc),
-            ) from exc
 
-    def _connect(self) -> sqlite3.Connection:
-        return connect(self.database)
+    def _read(self) -> sqlite3.Connection:
+        return connect_readonly(self.database)
+
+    def _write(self) -> sqlite3.Connection:
+        return connect_writable(self.database)
 
     def document_for_path(self, relative_path: str) -> Document | None:
-        with self._connect() as connection:
+        with self._read() as connection:
             row = connection.execute(
                 "SELECT * FROM documents WHERE path = ?",
                 (relative_path,),
@@ -36,7 +29,7 @@ class DocumentRepository:
         return self._document(row) if row else None
 
     def section_ids_for_document(self, document_id: str) -> list[str]:
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute(
                 "SELECT id FROM sections WHERE document_id = ? ORDER BY ordinal, id",
                 (document_id,),
@@ -45,7 +38,7 @@ class DocumentRepository:
 
     def sections_for_document(self, document_id: str) -> list[DocumentSection]:
         document = self.document(document_id)
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute(
                 "SELECT * FROM sections WHERE document_id = ? ORDER BY ordinal, id",
                 (document_id,),
@@ -54,7 +47,7 @@ class DocumentRepository:
 
 
     def documents_for_title(self, title: str) -> list[Document]:
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute(
                 "SELECT * FROM documents WHERE title = ? COLLATE NOCASE ORDER BY path",
                 (title.strip(),),
@@ -62,7 +55,7 @@ class DocumentRepository:
         return [self._document(row) for row in rows]
 
     def section(self, section_id: str) -> DocumentSection:
-        with self._connect() as connection:
+        with self._read() as connection:
             row = connection.execute(
                 "SELECT document_id FROM sections WHERE id = ?",
                 (section_id,),
@@ -97,7 +90,7 @@ class DocumentRepository:
         return result
 
     def document(self, document_id: str) -> Document:
-        with self._connect() as connection:
+        with self._read() as connection:
             row = connection.execute(
                 "SELECT * FROM documents WHERE id = ?",
                 (document_id,),
@@ -107,7 +100,7 @@ class DocumentRepository:
         return self._document(row)
 
     def all_documents(self) -> list[Document]:
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute("SELECT * FROM documents ORDER BY path").fetchall()
         return [self._document(row) for row in rows]
 
@@ -117,7 +110,7 @@ class DocumentRepository:
         sections: Sequence[DocumentSection],
     ) -> None:
         try:
-            with self._connect() as connection:
+            with self._write() as connection:
                 connection.execute(
                     """
                     INSERT INTO documents(id, path, title, kind, houdini_version, content_hash)
@@ -173,7 +166,7 @@ class DocumentRepository:
 
     def delete_document(self, document_id: str) -> None:
         try:
-            with self._connect() as connection:
+            with self._write() as connection:
                 connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
                 connection.commit()
         except sqlite3.Error as exc:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from houdocs.db.connection import connect
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
 from houdocs.search.models import SearchEntry
 
@@ -42,8 +42,13 @@ class SQLiteVecIndex:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = connect(self.database)
+    def _read(self) -> sqlite3.Connection:
+        connection = connect_readonly(self.database)
+        load_sqlite_vec(connection)
+        return connection
+
+    def _write(self) -> sqlite3.Connection:
+        connection = connect_writable(self.database)
         load_sqlite_vec(connection)
         return connection
 
@@ -55,7 +60,7 @@ class SQLiteVecIndex:
     ) -> None:
         if not entries:
             return
-        with self._connect() as connection:
+        with self._write() as connection:
             self.upsert_in_transaction(connection, profile, entries, vectors_by_hash)
             connection.commit()
 
@@ -105,7 +110,7 @@ class SQLiteVecIndex:
     def remove(self, profile: str, entry_ids: Sequence[str]) -> None:
         if not entry_ids:
             return
-        with self._connect() as connection:
+        with self._write() as connection:
             self.remove_in_transaction(connection, profile, entry_ids)
             connection.commit()
 
@@ -145,7 +150,7 @@ class SQLiteVecIndex:
         """
         params: list[object] = [_serialize(query_vector), top_k, *namespaces]
         try:
-            with self._connect() as connection:
+            with self._read() as connection:
                 rows = connection.execute(sql, tuple(params)).fetchall()
         except sqlite3.Error as exc:
             raise HouDocsError(
@@ -156,7 +161,7 @@ class SQLiteVecIndex:
         return [str(row["entry_id"]) for row in rows]
 
     def _ensure_profile(self, profile: str, dimensions: int) -> str:
-        with self._connect() as connection:
+        with self._write() as connection:
             table_name = self._ensure_profile_in_transaction(
                 connection, profile, dimensions
             )
@@ -197,7 +202,7 @@ class SQLiteVecIndex:
         return table_name
 
     def _table_for_profile(self, profile: str) -> str:
-        with self._connect() as connection:
+        with self._read() as connection:
             return self._table_for_profile_in_transaction(connection, profile)
 
     def _table_for_profile_in_transaction(

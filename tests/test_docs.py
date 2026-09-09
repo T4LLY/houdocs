@@ -4,10 +4,16 @@ import sqlite3
 import zipfile
 from pathlib import Path
 
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer, classify_document
 from houdocs.docs.repository import DocumentRepository
 from houdocs.docs.source import cache_bookish_trees
+
+
+def _repository(database: Path) -> DocumentRepository:
+    initialize_docs_database(database)
+    return DocumentRepository(database)
 
 
 def test_cache_bookish_trees_preserves_help_root_priority(tmp_path: Path) -> None:
@@ -110,7 +116,7 @@ def test_document_indexer_indexes_every_cached_document(tmp_path: Path) -> None:
     source.mkdir()
     document_path = source / "concept.txt"
     document_path.write_text("= Concept =\n\nOne.\n", encoding="utf-8")
-    repository = DocumentRepository(tmp_path / "docs.db")
+    repository = _repository(tmp_path / "docs.db")
     indexer = DocumentIndexer(
         repository=repository,
         parser=BookishDocumentParser(),
@@ -136,7 +142,7 @@ def test_parse_failure_is_reported_without_partial_document(tmp_path: Path) -> N
     source.mkdir()
     document_path = source / "page.txt"
     document_path.write_text("broken", encoding="utf-8")
-    repository = DocumentRepository(tmp_path / "docs.db")
+    repository = _repository(tmp_path / "docs.db")
     issues: list[tuple[str, str, str | None]] = []
     failing = DocumentIndexer(
         repository=repository,
@@ -156,8 +162,8 @@ def test_parse_failure_is_reported_without_partial_document(tmp_path: Path) -> N
     assert issues == [("bookish_parse_error", "ValueError: broken bookish", "page.txt")]
 
 
-def test_docs_database_contains_documents_and_sections_schema(tmp_path: Path) -> None:
-    repository = DocumentRepository(tmp_path / "docs.db")
+def test_initialize_docs_database_contains_documents_and_sections_schema(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "docs.db")
     assert repository.all_documents() == []
     with sqlite3.connect(tmp_path / "docs.db") as connection:
         tables = {
@@ -182,7 +188,7 @@ def test_document_indexer_persists_injected_token_count(tmp_path: Path) -> None:
         "= Page =\n\nIntro.\n\n== Details ==\n\nMore.\n",
         encoding="utf-8",
     )
-    repository = DocumentRepository(tmp_path / "docs.db")
+    repository = _repository(tmp_path / "docs.db")
     seen: list[str] = []
 
     def count_tokens(text: str) -> int:
@@ -209,7 +215,7 @@ def test_document_indexer_reports_bounded_progress(tmp_path: Path) -> None:
     (source / "b.txt").write_text("= B =\n", encoding="utf-8")
     progress: list[tuple[int, int]] = []
     indexer = DocumentIndexer(
-        repository=DocumentRepository(tmp_path / "docs.db"),
+        repository=_repository(tmp_path / "docs.db"),
         parser=BookishDocumentParser(),
         cache_directory=tmp_path / "cache",
         token_counter=len,

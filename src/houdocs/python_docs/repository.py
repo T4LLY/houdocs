@@ -5,8 +5,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-from houdocs.db.connection import connect
-from houdocs.db.schema import ensure_docs_schema
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
 from houdocs.python_docs.models import PythonDocumentRecord
 
@@ -14,12 +13,10 @@ from houdocs.python_docs.models import PythonDocumentRecord
 class PythonRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
-        with connect(database) as connection:
-            ensure_docs_schema(connection)
 
     def replace_all(self, records: Sequence[PythonDocumentRecord]) -> None:
         try:
-            with connect(self.database) as connection:
+            with connect_writable(self.database) as connection:
                 connection.execute("DELETE FROM python_documents")
                 connection.executemany(
                     """
@@ -51,7 +48,7 @@ class PythonRepository:
 
 
     def get(self, symbol: str) -> PythonDocumentRecord | None:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute(
                 "SELECT * FROM python_documents WHERE lower(symbol) = lower(?)",
                 (symbol.strip(),),
@@ -61,14 +58,14 @@ class PythonRepository:
         return self._record(row)
 
     def all(self) -> list[PythonDocumentRecord]:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             rows = connection.execute(
                 "SELECT * FROM python_documents ORDER BY symbol COLLATE NOCASE, symbol"
             ).fetchall()
         return [self._record(row) for row in rows]
 
     def count(self) -> int:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM python_documents").fetchone()
         return int(row[0])
 

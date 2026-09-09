@@ -344,6 +344,9 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
     paths = VersionPaths.for_version("22.0.429", data_root=data_root)
     paths.ensure()
 
+    from houdocs.db.schema import initialize_docs_database
+
+    initialize_docs_database(paths.database)
     documents = DocumentRepository(paths.database)
     DocumentIndexer(
         repository=documents,

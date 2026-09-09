@@ -5,8 +5,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-from houdocs.db.connection import connect
-from houdocs.db.schema import ensure_docs_schema
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
 from houdocs.vex_docs.models import VexDocumentRecord
 
@@ -14,12 +13,10 @@ from houdocs.vex_docs.models import VexDocumentRecord
 class VexRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
-        with connect(database) as connection:
-            ensure_docs_schema(connection)
 
     def replace_all(self, records: Sequence[VexDocumentRecord]) -> None:
         try:
-            with connect(self.database) as connection:
+            with connect_writable(self.database) as connection:
                 connection.execute("DELETE FROM vex_documents")
                 connection.executemany(
                     """
@@ -52,7 +49,7 @@ class VexRepository:
 
 
     def get(self, function_name: str) -> VexDocumentRecord | None:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute(
                 "SELECT * FROM vex_documents WHERE lower(function_name) = lower(?)",
                 (function_name.strip(),),
@@ -62,14 +59,14 @@ class VexRepository:
         return self._record(row)
 
     def all(self) -> list[VexDocumentRecord]:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             rows = connection.execute(
                 "SELECT * FROM vex_documents ORDER BY function_name COLLATE NOCASE, function_name"
             ).fetchall()
         return [self._record(row) for row in rows]
 
     def count(self) -> int:
-        with connect(self.database) as connection:
+        with connect_readonly(self.database) as connection:
             row = connection.execute("SELECT COUNT(*) FROM vex_documents").fetchone()
         return int(row[0])
 

@@ -9,14 +9,13 @@ from pathlib import Path
 
 import numpy as np
 
-from houdocs.db.connection import connect
+from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
 from houdocs.search.dense import SQLiteVecIndex
 from houdocs.search.embedding import EmbeddingProvider
 from houdocs.search.lexical import SQLiteFtsIndex
 from houdocs.search.models import SearchEntry, SearchHit
 from houdocs.search.rrf import reciprocal_rank_fusion
-from houdocs.search.store import ensure_search_schema
 
 
 _SQLITE_IN_BATCH_SIZE = 500
@@ -46,18 +45,18 @@ class HybridSearchBackend:
         dense_index: SQLiteVecIndex | None = None,
     ) -> None:
         self.database = database
-        self.database.parent.mkdir(parents=True, exist_ok=True)
         self.embeddings = embeddings
         self.rrf_k = rrf_k
         self.candidate_multiplier = candidate_multiplier
         self.candidate_min = candidate_min
-        with self._connect() as connection:
-            ensure_search_schema(connection)
-        self.lexical = SQLiteFtsIndex(self._connect)
+        self.lexical = SQLiteFtsIndex(self._read)
         self.dense = dense_index or SQLiteVecIndex(database)
 
-    def _connect(self) -> sqlite3.Connection:
-        return connect(self.database)
+    def _read(self) -> sqlite3.Connection:
+        return connect_readonly(self.database)
+
+    def _write(self) -> sqlite3.Connection:
+        return connect_writable(self.database)
 
     def upsert(
         self,
@@ -79,7 +78,7 @@ class HybridSearchBackend:
             )
 
         entry_ids = [entry.id for entry in entries]
-        with self._connect() as connection:
+        with self._write() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing_profiles = self._profiles_for_entry_ids_in_connection(
                 connection, entry_ids
@@ -177,7 +176,7 @@ class HybridSearchBackend:
         return missing
 
     def entry_ids(self, namespace: str) -> list[str]:
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute(
                 "SELECT entry_id FROM search_entries WHERE namespace = ? ORDER BY entry_id",
                 (namespace,),
@@ -187,7 +186,7 @@ class HybridSearchBackend:
     def remove(self, entry_ids: Sequence[str]) -> None:
         if not entry_ids:
             return
-        with self._connect() as connection:
+        with self._write() as connection:
             connection.execute("BEGIN IMMEDIATE")
             profiles = self._profiles_for_entry_ids_in_connection(connection, entry_ids)
             fts_rowids = self._fts_rowids_for_entry_ids_in_connection(
@@ -300,7 +299,7 @@ class HybridSearchBackend:
         if not namespaces:
             return []
         placeholders = ",".join("?" for _ in namespaces)
-        with self._connect() as connection:
+        with self._read() as connection:
             rows = connection.execute(
                 f"""
                 SELECT embedding_profile_id FROM search_entries
@@ -313,7 +312,7 @@ class HybridSearchBackend:
         return [str(row["embedding_profile_id"]) for row in rows]
 
     def _profiles_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, str]:
-        with self._connect() as connection:
+        with self._read() as connection:
             return self._profiles_for_entry_ids_in_connection(connection, entry_ids)
 
     def _profiles_for_entry_ids_in_connection(
@@ -337,7 +336,7 @@ class HybridSearchBackend:
         return found
 
     def _fts_rowids_for_entry_ids(self, entry_ids: Sequence[str]) -> dict[str, int]:
-        with self._connect() as connection:
+        with self._read() as connection:
             return self._fts_rowids_for_entry_ids_in_connection(connection, entry_ids)
 
     def _fts_rowids_for_entry_ids_in_connection(
@@ -365,7 +364,7 @@ class HybridSearchBackend:
         for start in range(0, len(entry_ids), _SQLITE_IN_BATCH_SIZE):
             batch = entry_ids[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
-            with self._connect() as connection:
+            with self._read() as connection:
                 rows = connection.execute(
                     f"""
                     SELECT se.*, sc.content
@@ -409,7 +408,7 @@ class HybridSearchBackend:
                     "embedding_protocol_error",
                     "Embedding provider returned the wrong vector count.",
                 )
-            with self._connect() as connection:
+            with self._write() as connection:
                 for content_hash, vector in zip(missing_hashes, vectors):
                     normalized = np.asarray(vector, dtype=np.float32).reshape(-1)
                     connection.execute(
@@ -437,7 +436,7 @@ class HybridSearchBackend:
         for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
             batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
-            with self._connect() as connection:
+            with self._read() as connection:
                 rows = connection.execute(
                     f"""
                     SELECT content_hash FROM embedding_cache
@@ -459,7 +458,7 @@ class HybridSearchBackend:
         for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
             batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
-            with self._connect() as connection:
+            with self._read() as connection:
                 rows = connection.execute(
                     f"""
                     SELECT content_hash, dimensions, vector FROM embedding_cache

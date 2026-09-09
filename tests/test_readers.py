@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.models import Document
@@ -29,8 +30,13 @@ from houdocs.vex_docs.read import VexDocumentReader
 from houdocs.vex_docs.repository import VexRepository
 
 
+def _repository(database: Path) -> DocumentRepository:
+    initialize_docs_database(database)
+    return DocumentRepository(database)
+
+
 def _base(source: Path, state: Path) -> DocumentRepository:
-    repository = DocumentRepository(state / "docs.db")
+    repository = _repository(state / "docs.db")
     DocumentIndexer(
         repository=repository,
         parser=BookishDocumentParser(),
@@ -316,7 +322,7 @@ def test_specialized_readers_resolve_direct_indexes_and_reuse_sections(
 
 def test_node_reader_returns_only_compact_operational_metadata(tmp_path: Path) -> None:
     database = tmp_path / "docs.db"
-    documents = DocumentRepository(database)
+    documents = _repository(database)
     documents.replace_document(
         Document(
             "node-doc",
@@ -500,7 +506,7 @@ def test_node_repository_resolves_duplicate_canonical_names_by_priority(
     tmp_path: Path,
 ) -> None:
     database = tmp_path / "docs.db"
-    documents = DocumentRepository(database)
+    documents = _repository(database)
     documents.replace_document(
         Document("lower", "Lower", "nodes/sop/foo.txt", "node", "22.0.429", "lower"),
         [],

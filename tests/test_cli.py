@@ -9,11 +9,17 @@ import pytest
 from typer.testing import CliRunner
 
 from houdocs.cli import _init_summary, app
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.repository import DocumentRepository
 from houdocs.paths import VersionPaths
 
 
 runner = CliRunner()
+
+
+def _docs_repository(database: Path) -> DocumentRepository:
+    initialize_docs_database(database)
+    return DocumentRepository(database)
 
 
 @pytest.fixture(autouse=True)
@@ -74,7 +80,7 @@ def test_offline_command_serializes_raw_sqlite_errors(
 ) -> None:
     paths = VersionPaths.for_version("22.0.429")
     paths.ensure()
-    DocumentRepository(paths.database)
+    _docs_repository(paths.database)
 
     def fail_read(self, title):
         del self, title
@@ -107,7 +113,7 @@ def test_ambiguous_read_error_emits_native_choices(tmp_path: Path) -> None:
 
     paths = VersionPaths.for_version("22.0.429")
     paths.ensure()
-    repository = DocumentRepository(paths.database)
+    repository = _docs_repository(paths.database)
     DocumentIndexer(
         repository=repository,
         parser=BookishDocumentParser(),
@@ -147,7 +153,7 @@ def test_sections_command_lists_paths_tokens_and_supports_pick(tmp_path: Path) -
     paths = VersionPaths.for_version("22.0.429")
     paths.ensure()
     DocumentIndexer(
-        repository=DocumentRepository(paths.database),
+        repository=_docs_repository(paths.database),
         parser=BookishDocumentParser(),
         cache_directory=paths.docs,
         token_counter=len,
@@ -309,7 +315,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_cached_source
         encoding="utf-8",
     )
 
-    documents = DocumentRepository(paths.database)
+    documents = _docs_repository(paths.database)
     DocumentIndexer(
         repository=documents,
         parser=BookishDocumentParser(),
@@ -389,7 +395,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_cached_source
     assert unresolved_path.read_bytes() == assist_report_before
     assert paths.search_database.read_bytes() == b"search-index-sentinel"
     assert NodeReader(
-        documents=DocumentRepository(paths.database),
+        documents=_docs_repository(paths.database),
         repository=NodeRepository(paths.database),
         token_counter=len,
     ).read("Sop/example") == {
@@ -479,7 +485,7 @@ def test_init_import_assist_failure_preserves_report_and_node_metadata(
         encoding="utf-8",
     )
 
-    documents = DocumentRepository(paths.database)
+    documents = _docs_repository(paths.database)
     DocumentIndexer(
         repository=documents,
         parser=BookishDocumentParser(),
@@ -537,7 +543,7 @@ def test_node_command_lists_token_costs_and_reads_detail(
 
     paths = VersionPaths.for_version("22.0.429")
     paths.ensure()
-    documents = DocumentRepository(paths.database)
+    documents = _docs_repository(paths.database)
     documents.replace_document(
         Document(
             "node-doc",

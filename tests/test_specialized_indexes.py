@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.header import parse_page_properties
 from houdocs.docs.index import DocumentIndexer
@@ -20,6 +21,7 @@ from houdocs.vex_docs.repository import VexRepository
 
 
 def _index_base_documents(source: Path, state: Path) -> DocumentRepository:
+    initialize_docs_database(state / "docs.db")
     repository = DocumentRepository(state / "docs.db")
     DocumentIndexer(
         repository=repository,
@@ -31,7 +33,7 @@ def _index_base_documents(source: Path, state: Path) -> DocumentRepository:
 
 
 def test_specialized_schema_is_created_in_docs_database(tmp_path: Path) -> None:
-    DocumentRepository(tmp_path / "docs.db")
+    initialize_docs_database(tmp_path / "docs.db")
     with sqlite3.connect(tmp_path / "docs.db") as connection:
         tables = {
             row[0]

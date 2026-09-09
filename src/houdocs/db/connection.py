@@ -18,11 +18,21 @@ class _ManagedConnection(sqlite3.Connection):
             self.close()
 
 
-def connect(path: Path) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, factory=_ManagedConnection)
+def _configure(connection: sqlite3.Connection) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA journal_mode = WAL")
+    return connection
+
+
+def connect_readonly(path: Path) -> sqlite3.Connection:
+    uri = path.resolve().as_uri() + "?mode=ro"
+    connection = sqlite3.connect(uri, uri=True, factory=_ManagedConnection)
+    return _configure(connection)
+
+
+def connect_writable(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path, factory=_ManagedConnection)
+    _configure(connection)
     connection.execute("PRAGMA synchronous = NORMAL")
     return connection

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
+
+from houdocs.db.connection import connect_writable
 
 _SEARCH_SCHEMA = """
 CREATE TABLE IF NOT EXISTS search_entries (
@@ -49,7 +52,12 @@ CREATE TABLE IF NOT EXISTS search_vector_profiles (
 """
 
 
-def ensure_search_schema(connection: sqlite3.Connection) -> None:
+def _create_search_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(_SEARCH_SCHEMA)
     connection.commit()
 
+
+def initialize_search_database(path: Path) -> None:
+    with connect_writable(path) as connection:
+        connection.execute("PRAGMA journal_mode = WAL")
+        _create_search_schema(connection)

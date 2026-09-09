@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from houdocs.config import HouDocsConfig
+from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
 from houdocs.docs.repository import DocumentRepository
@@ -21,6 +22,7 @@ from houdocs.python_docs.repository import PythonRepository
 from houdocs.search.embedding import Model2VecEmbeddingProvider
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
+from houdocs.search.store import initialize_search_database
 from houdocs.search.tokens import count_openai_tokens
 from houdocs.vex_docs.index import VexIndexer
 from houdocs.vex_docs.repository import VexRepository
@@ -85,6 +87,7 @@ class InitService:
             reporter = InitReporter()
             self._collect_runtime_issues(snapshot, reporter)
 
+            initialize_docs_database(staged_database)
             repository = DocumentRepository(staged_database)
             indexer = DocumentIndexer(
                 repository=repository,
@@ -137,6 +140,7 @@ class InitService:
                 ).index_all(on_warning=warning, on_error=error)
 
             with progress_view.phase("build search index"):
+                initialize_search_database(staged_search_database)
                 search_backend = HybridSearchBackend(
                     database=staged_search_database,
                     embeddings=Model2VecEmbeddingProvider(),

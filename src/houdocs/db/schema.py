@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
+
+from houdocs.db.connection import connect_writable
 
 
 _DOCS_SCHEMA = """
@@ -72,6 +75,12 @@ ON vex_documents(document_id);
 """
 
 
-def ensure_docs_schema(connection: sqlite3.Connection) -> None:
+def _create_docs_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(_DOCS_SCHEMA)
     connection.commit()
+
+
+def initialize_docs_database(path: Path) -> None:
+    with connect_writable(path) as connection:
+        connection.execute("PRAGMA journal_mode = WAL")
+        _create_docs_schema(connection)

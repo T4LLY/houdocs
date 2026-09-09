@@ -6,13 +6,13 @@ Define the minimal public HouDocs command surface without exposing internal inde
 
 ## Requirements
 
-### Requirement: Expose six top-level documentation commands
+### Requirement: Expose seven top-level documentation commands
 
-HouDocs SHALL expose exactly the documentation workflow commands `init`, `search`, `read`, `node`, `hom`, and `vex` at the top level in the initial public interface.
+HouDocs SHALL expose exactly the documentation workflow commands `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` at the top level in the initial public interface.
 
 #### Scenario: Inspect the top-level CLI
 - **WHEN** the caller requests top-level help
-- **THEN** `init`, `search`, `read`, `node`, `hom`, and `vex` are exposed
+- **THEN** `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` are exposed
 - **AND** no public `rebuild` command is exposed
 
 ### Requirement: Search may target one documentation domain
@@ -45,6 +45,22 @@ The public read command SHALL accept a page positional argument, an optional sec
 - **WHEN** a page title matches more than one indexed document
 - **THEN** HouDocs returns numbered human-readable candidates
 - **AND** the caller can re-run `houdocs read <page> --pick N` to select one candidate
+- **AND** the candidate list does not expose an internal document ID or source path
+
+### Requirement: List page sections without reading their bodies
+
+The public `sections` command SHALL accept a page positional argument and `--pick N` only for selecting a numbered candidate when a page title is ambiguous. It SHALL return the ordered section paths and token counts for the selected page without returning section body text.
+
+#### Scenario: List sections for one page
+- **WHEN** the caller runs `houdocs sections Node`
+- **THEN** HouDocs returns the page's sections in document order
+- **AND** each section includes its heading path and token count
+- **AND** section body text is not returned
+
+#### Scenario: Resolve an ambiguous page title for section listing
+- **WHEN** a page title matches more than one indexed document
+- **THEN** HouDocs returns numbered human-readable candidates
+- **AND** the caller can re-run `houdocs sections <page> --pick N` to select one candidate
 - **AND** the candidate list does not expose an internal document ID or source path
 
 ### Requirement: Keep specialist readers identifier-only

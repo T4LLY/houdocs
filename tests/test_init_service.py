@@ -285,6 +285,8 @@ def test_init_service_failure_preserves_existing_initialized_state(
     assert (paths.docs / "old-cache.txt").read_text(encoding="utf-8") == "old-cache"
     assert not Path(str(paths.database) + ".init-new").exists()
     assert not Path(str(paths.search_database) + ".init-new").exists()
+    assert not (paths.root / ".init-staging-docs").exists()
+    assert not (paths.root / ".init-staging-reports").exists()
 
 
 def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: Path, monkeypatch) -> None:
@@ -393,18 +395,17 @@ def test_init_artifact_promotion_rolls_back_all_existing_outputs(
 ) -> None:
     import sqlite3
 
-    from houdocs.init.service import _promote_init_artifacts
+    import pytest
 
-    final_docs_db = tmp_path / "docs.db"
-    final_search_db = tmp_path / "search.db"
-    staged_docs_db = tmp_path / "docs.db.init-new"
-    staged_search_db = tmp_path / "search.db.init-new"
+    from houdocs.init.staging import InitStaging
+    from houdocs.paths import VersionPaths
+
+    paths = VersionPaths.for_version("22.0.429", data_root=tmp_path / "data")
+    paths.ensure()
 
     for path, marker in (
-        (final_docs_db, "old-docs"),
-        (final_search_db, "old-search"),
-        (staged_docs_db, "new-docs"),
-        (staged_search_db, "new-search"),
+        (paths.database, "old-docs"),
+        (paths.search_database, "old-search"),
     ):
         connection = sqlite3.connect(path)
         try:
@@ -414,43 +415,47 @@ def test_init_artifact_promotion_rolls_back_all_existing_outputs(
         finally:
             connection.close()
 
-    final_docs = tmp_path / "docs"
-    staged_docs = tmp_path / ".init-staging-docs"
-    final_docs.mkdir()
-    staged_docs.mkdir()
-    (final_docs / "state.txt").write_text("old-cache", encoding="utf-8")
-    (staged_docs / "state.txt").write_text("new-cache", encoding="utf-8")
-
-    final_report = tmp_path / "init-report.json"
-    final_unresolved = tmp_path / "node-document-unresolved.json"
-    staged_report = tmp_path / "staged-init-report.json"
-    staged_unresolved = tmp_path / "staged-node-document-unresolved.json"
+    (paths.docs / "state.txt").write_text("old-cache", encoding="utf-8")
+    final_report = paths.reports / "init-report.json"
+    final_unresolved = paths.reports / "node-document-unresolved.json"
     final_report.write_text("old-report", encoding="utf-8")
     final_unresolved.write_text("old-assist", encoding="utf-8")
-    staged_report.write_text("new-report", encoding="utf-8")
-    staged_unresolved.write_text("new-assist", encoding="utf-8")
 
     original_replace = Path.replace
 
-    def fail_second_database(self: Path, target: Path) -> Path:
-        if self == staged_search_db and Path(target) == final_search_db:
-            raise OSError("forced promotion failure")
-        return original_replace(self, target)
+    with InitStaging(paths) as staging:
+        for path, marker in (
+            (staging.database, "new-docs"),
+            (staging.search_database, "new-search"),
+        ):
+            connection = sqlite3.connect(path)
+            try:
+                connection.execute("CREATE TABLE marker(value TEXT)")
+                connection.execute("INSERT INTO marker(value) VALUES (?)", (marker,))
+                connection.commit()
+            finally:
+                connection.close()
 
-    monkeypatch.setattr(Path, "replace", fail_second_database)
+        (staging.docs / "state.txt").write_text("new-cache", encoding="utf-8")
+        staged_report = staging.reports / "init-report.json"
+        staged_unresolved = staging.reports / "node-document-unresolved.json"
+        staged_report.write_text("new-report", encoding="utf-8")
+        staged_unresolved.write_text("new-assist", encoding="utf-8")
 
-    import pytest
+        def fail_second_database(self: Path, target: Path) -> Path:
+            if self == staging.search_database and Path(target) == paths.search_database:
+                raise OSError("forced promotion failure")
+            return original_replace(self, target)
 
-    with pytest.raises(OSError, match="forced promotion failure"):
-        _promote_init_artifacts(
-            database=(staged_docs_db, final_docs_db),
-            search_database=(staged_search_db, final_search_db),
-            artifacts=(
-                (staged_docs, final_docs),
-                (staged_unresolved, final_unresolved),
-                (staged_report, final_report),
-            ),
-        )
+        monkeypatch.setattr(Path, "replace", fail_second_database)
+
+        with pytest.raises(OSError, match="forced promotion failure"):
+            staging.promote(
+                artifacts=(
+                    (staged_unresolved, final_unresolved),
+                    (staged_report, final_report),
+                )
+            )
 
     def marker(path: Path) -> str:
         connection = sqlite3.connect(path)
@@ -459,8 +464,12 @@ def test_init_artifact_promotion_rolls_back_all_existing_outputs(
         finally:
             connection.close()
 
-    assert marker(final_docs_db) == "old-docs"
-    assert marker(final_search_db) == "old-search"
-    assert (final_docs / "state.txt").read_text(encoding="utf-8") == "old-cache"
+    assert marker(paths.database) == "old-docs"
+    assert marker(paths.search_database) == "old-search"
+    assert (paths.docs / "state.txt").read_text(encoding="utf-8") == "old-cache"
     assert final_unresolved.read_text(encoding="utf-8") == "old-assist"
     assert final_report.read_text(encoding="utf-8") == "old-report"
+    assert not staging.database.exists()
+    assert not staging.search_database.exists()
+    assert not staging.docs.exists()
+    assert not staging.reports.exists()

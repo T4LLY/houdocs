@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Define the normal `read`, `node`, `python`, and `vex` commands after initialization.
+Define the normal `read`, `node`, `hom`, and `vex` commands after initialization.
 
 ## Requirements
 
 ### Requirement: Normal readers are offline
 
-`houdocs read`, `houdocs node`, `houdocs python`, and `houdocs vex` SHALL read only version-local derived state after init and SHALL NOT import `hou`, open a Houdini session, or require host/port information.
+`houdocs read`, `houdocs node`, `houdocs hom`, and `houdocs vex` SHALL read only version-local derived state after init and SHALL NOT import `hou`, open a Houdini session, or require host/port information.
 
 #### Scenario: Houdini is not running
 - **WHEN** a selected version has already been initialized
@@ -39,11 +39,11 @@ The public command SHALL be `houdocs read <page> [section] [--pick N]`. A page n
 
 ### Requirement: Specialized commands use direct specialized indexes
 
-`houdocs node <node-type>`, `houdocs python <symbol>`, and `houdocs vex <function>` SHALL first resolve their target through `node_documents`, `python_documents`, or `vex_documents` respectively. They SHALL obtain body text from the common `sections` store rather than duplicating bodies in specialized tables.
+`houdocs node <node-type>`, `houdocs hom <symbol>`, and `houdocs vex <function>` SHALL first resolve their target through `node_documents`, `python_documents`, or `vex_documents` respectively. They SHALL obtain body text from the common `sections` store rather than duplicating bodies in specialized tables.
 
 #### Scenario: Read a Python method
 - **WHEN** `python_documents` contains `hou.Node.setInput`
-- **THEN** `houdocs python hou.Node.setInput` directly resolves its document and stored signatures
+- **THEN** `houdocs hom hou.Node.setInput` directly resolves its document and stored signatures
 - **AND** returns the member body extracted from that document's indexed sections
 
 #### Scenario: Read a VEX overload set

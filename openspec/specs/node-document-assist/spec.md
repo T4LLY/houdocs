@@ -8,7 +8,7 @@ HouDocs SHALL keep AI-assisted resolution of exceptional Node parameter mappings
 
 ### Requirement: Assist remains an optional maintenance tool
 
-AI-assisted Node parameter resolution SHALL live under `tools/` and SHALL NOT add a public `houdocs` subcommand. Normal `houdocs init`, `search`, `read`, `node`, `python`, and `vex` behavior SHALL NOT require the assist tool or its prompt.
+AI-assisted Node parameter resolution SHALL live under `tools/` and SHALL NOT add a public `houdocs` subcommand. Normal `houdocs init`, `search`, `read`, `node`, `hom`, and `vex` behavior SHALL NOT require the assist tool or its prompt.
 
 #### Scenario: Normal HouDocs use
 

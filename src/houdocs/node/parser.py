@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from houdocs.node.models import DocumentedField, NodeDocSource, NodeTypeLookup, RelatedLink
+from houdocs.node.text import clean_label
 
 _PROPERTY_RE = re.compile(r"^#(?P<name>[A-Za-z0-9_-]+):\s*(?P<value>.*)$")
 _HEADING_RE = re.compile(r"^(?P<marks>={1,6})\s*(?P<title>.*?)\s*(?P=marks)(?:\s*\([^)]+\))?\s*$")
@@ -176,7 +177,7 @@ def _parse_fields(lines: list[str], *, allow_id: bool) -> list[DocumentedField]:
             if level >= 2:
                 for existing_level in [key for key in group_levels if key >= level]:
                     del group_levels[existing_level]
-                title = _clean_label(heading.group("title"))
+                title = clean_label(heading.group("title"))
                 if title:
                     group_levels[level] = title
             continue
@@ -186,7 +187,7 @@ def _parse_fields(lines: list[str], *, allow_id: bool) -> list[DocumentedField]:
             continue
         if _is_field_label(raw):
             finish()
-            current_label = _clean_label(stripped[:-1])
+            current_label = clean_label(stripped[:-1])
             current_group_path = active_group_path()
             continue
         if current_label is None:
@@ -209,14 +210,8 @@ def _is_field_label(raw: str) -> bool:
         return False
     if raw[:1].isspace() and not stripped.startswith("::"):
         return False
-    label = _clean_label(stripped[:-1])
+    label = clean_label(stripped[:-1])
     return bool(label) and not label.casefold().startswith("task")
-
-
-def _clean_label(value: str) -> str:
-    value = value.strip().lstrip(":").strip()
-    value = value.replace('"""', "").replace("__", "").replace("`", "")
-    return _WHITESPACE_RE.sub(" ", value).strip()
 
 
 def _normalize_description(lines: list[str]) -> str:
@@ -236,7 +231,7 @@ def _parse_related(lines: list[str]) -> list[RelatedLink]:
             body = match.group(1).strip()
             if "|" in body:
                 label, target = body.split("|", 1)
-                label = _clean_label(label) or None
+                label = clean_label(label) or None
                 target = target.strip()
             else:
                 label = None

@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from houdocs.docs.models import Document
-from houdocs.errors import HouDocsError
 from houdocs.docs.repository import DocumentRepository
+from houdocs.errors import HouDocsError
+from houdocs.specialized_indexing import SpecializedIssueCallback, emit_specialized_issue
 from houdocs.init.probe import RuntimeNodeSnapshot
 from houdocs.node.models import NodeDocumentRecord, RuntimeNodeType, RuntimeParameter
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
 from houdocs.node.repository import NodeRepository
 from houdocs.node.resolver import NodeTypeCatalog, build_node_metadata
 from houdocs.node.unresolved import load_overrides, unresolved_path, write_unresolved
-
-IssueCallback = Callable[[str, str, str | None, str | None], None]
 
 
 class NodeIndexer:
@@ -35,8 +33,8 @@ class NodeIndexer:
         runtime_nodes: tuple[RuntimeNodeSnapshot, ...],
         *,
         houdini_version: str,
-        on_warning: IssueCallback | None = None,
-        on_error: IssueCallback | None = None,
+        on_warning: SpecializedIssueCallback | None = None,
+        on_error: SpecializedIssueCallback | None = None,
         overrides: dict[str, list[dict[str, object]]] | None = None,
         write_report: bool = True,
         fail_on_error: bool = False,
@@ -98,7 +96,7 @@ class NodeIndexer:
                         f"Unable to parse node documentation during assist import: {document.relative_path}",
                         detail=f"{type(exc).__name__}: {exc}",
                     ) from exc
-                _issue(
+                emit_specialized_issue(
                     on_error,
                     "node_document_parse_error",
                     f"{type(exc).__name__}: {exc}",
@@ -128,13 +126,13 @@ class NodeIndexer:
     def _read_source(
         self,
         document: Document,
-        on_error: IssueCallback | None,
+        on_error: SpecializedIssueCallback | None,
     ) -> str | None:
         path = self.docs_directory / PurePosixPath(document.relative_path)
         try:
             return path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            _issue(
+            emit_specialized_issue(
                 on_error,
                 "specialized_source_read_error",
                 str(exc),
@@ -146,12 +144,12 @@ class NodeIndexer:
     @staticmethod
     def _report_unresolved(
         unresolved: dict[str, list[dict[str, object]]],
-        callback: IssueCallback | None,
+        callback: SpecializedIssueCallback | None,
     ) -> None:
         if callback is None:
             return
         for item in unresolved["node_types"]:
-            _issue(
+            emit_specialized_issue(
                 callback,
                 "node_type_unresolved",
                 str(item.get("reason") or "unresolved"),
@@ -159,7 +157,7 @@ class NodeIndexer:
                 _string(item.get("internal_name")),
             )
         for item in unresolved["parameters"]:
-            _issue(
+            emit_specialized_issue(
                 callback,
                 "node_parameter_unresolved",
                 str(item.get("reason") or "unresolved"),
@@ -167,7 +165,7 @@ class NodeIndexer:
                 _string(item.get("node")),
             )
         for item in unresolved["related"]:
-            _issue(
+            emit_specialized_issue(
                 callback,
                 "node_related_unresolved",
                 str(item.get("reason") or "unresolved"),
@@ -208,17 +206,6 @@ def _runtime_node_types(rows: tuple[RuntimeNodeSnapshot, ...]) -> tuple[RuntimeN
             )
         )
     return tuple(nodes)
-
-
-def _issue(
-    callback: IssueCallback | None,
-    kind: str,
-    detail: str,
-    document: str | None,
-    symbol: str | None,
-) -> None:
-    if callback is not None:
-        callback(kind, detail, document, symbol)
 
 
 def _string(value: object) -> str | None:

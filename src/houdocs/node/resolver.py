@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,8 +26,7 @@ from houdocs.node.parser import (
     node_type_lookup,
     strict_node_lookup,
 )
-
-_WHITESPACE_RE = re.compile(r"\s+")
+from houdocs.node.text import clean_label
 
 
 class NodeTypeCatalog:
@@ -761,18 +759,12 @@ def _parameter_id(node_type_id: str, value: str) -> str:
     return hashlib.sha256(f"{node_type_id}|{value}".encode("utf-8")).hexdigest()[:32]
 
 
-def _clean_label(value: str) -> str:
-    value = value.strip().lstrip(":").strip()
-    value = value.replace('"""', "").replace("__", "").replace("`", "")
-    return _WHITESPACE_RE.sub(" ", value).strip()
-
-
 def _normalize_key(value: str) -> str:
     return value.casefold().strip()
 
 
 def _label_key(value: str) -> str:
-    value = _clean_label(value).casefold()
+    value = clean_label(value).casefold()
     return "".join(character for character in value if character.isalnum())
 
 

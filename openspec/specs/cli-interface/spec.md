@@ -87,11 +87,13 @@ When the selected Houdini version already has a `docs.db`, `houdocs init` SHALL 
 
 ### Requirement: Import saved assist overrides without full initialization
 
-The public init command SHALL expose `--import-assist`. This mode SHALL apply saved Node parameter overrides to the existing documentation database without running the normal full initialization workflow. Successful output SHALL be one concise text line reporting the number of overrides actually resolved.
+The public init command SHALL expose `--import-assist`. This mode SHALL read the saved unresolved override report and apply its saved Node parameter overrides directly to existing Node metadata in the documentation database without running the normal full initialization workflow. It SHALL not read the cached documentation or saved Node runtime dump, and SHALL not run Node reindexing or resolution. Successful output SHALL be one concise text line reporting the number of overrides actually resolved.
 
 #### Scenario: Import saved assist mappings
 - **WHEN** the caller runs `houdocs init --import-assist` for an initialized version
-- **THEN** HouDocs reuses the saved Node runtime dump and documentation cache
-- **AND** updates Node metadata in the existing `docs.db`
+- **THEN** HouDocs reads the saved unresolved override report and the existing `docs.db`
+- **AND** updates only the targeted Node metadata in the existing `docs.db`
+- **AND** does not read the saved Node runtime dump or documentation cache
+- **AND** does not run Node reindexing or resolution
 - **AND** does not rebuild the general documentation or search indexes
 - **AND** prints `Imported N assist overrides.`

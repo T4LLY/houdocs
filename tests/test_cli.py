@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -288,7 +289,7 @@ def test_init_existing_database_requires_explicit_y_confirmation(
     assert payload["houdini_version"] == "22.0.429"
 
 
-def test_init_import_assist_updates_existing_node_metadata_without_json(
+def test_init_import_assist_updates_existing_node_metadata_without_cached_sources(
     tmp_path: Path,
 ) -> None:
     from houdocs.docs.bookish import BookishDocumentParser
@@ -354,17 +355,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
         encoding="utf-8",
     )
     assist_report_before = unresolved_path.read_bytes()
-    (paths.reports / "houdini-node-types-22.0.429.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "houdini_version": "22.0.429",
-                "node_types": list(runtime_rows),
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    shutil.rmtree(paths.docs)
 
     assert NodeReader(
         documents=documents,
@@ -410,6 +401,19 @@ def test_init_import_assist_updates_existing_node_metadata_without_json(
             }
         ]
     }
+    metadata_after_first_import = NodeRepository(paths.database).resolve("Sop/example")
+
+    repeated = runner.invoke(
+        app,
+        ["init", "--houdini-version", "22.0.429", "--import-assist"],
+    )
+
+    assert repeated.exit_code == 0
+    assert repeated.stdout == "Imported 1 assist overrides.\n"
+    assert (
+        NodeRepository(paths.database).resolve("Sop/example")
+        == metadata_after_first_import
+    )
 
 
 def test_init_confirmation_also_guards_existing_search_database(
@@ -453,9 +457,12 @@ def test_init_confirmation_also_guards_existing_search_database(
     assert paths.search_database.read_bytes() == b"existing-search"
 
 
-def test_init_import_assist_failure_preserves_report_and_node_metadata(tmp_path: Path) -> None:
+def test_init_import_assist_failure_preserves_report_and_node_metadata(
+    tmp_path: Path,
+) -> None:
     from houdocs.docs.bookish import BookishDocumentParser
     from houdocs.docs.index import DocumentIndexer
+    from houdocs.errors import HouDocsError
     from houdocs.init.service import InitService
     from houdocs.node.index import NodeIndexer
     from houdocs.node.repository import NodeRepository
@@ -494,27 +501,24 @@ def test_init_import_assist_failure_preserves_report_and_node_metadata(tmp_path:
     ).index_all(runtime_rows, houdini_version="22.0.429")
 
     unresolved_path = paths.reports / "node-document-unresolved-22.0.429.json"
+    unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))
+    unresolved["overrides"]["parameters"] = [
+        {
+            "document": "nodes/sop/example.txt",
+            "doc_ordinal": 0,
+            "parm_ids": ["missing"],
+        }
+    ]
+    unresolved_path.write_text(json.dumps(unresolved), encoding="utf-8")
     report_before = unresolved_path.read_bytes()
-    (paths.reports / "houdini-node-types-22.0.429.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "houdini_version": "22.0.429",
-                "node_types": list(runtime_rows),
-            }
-        ),
-        encoding="utf-8",
-    )
-    cached = paths.docs / "nodes" / "sop" / "example.txt"
-    cached.unlink()
-    before_count = NodeRepository(paths.database).count()
+    metadata_before = NodeRepository(paths.database).resolve("Sop/example")
 
-    with pytest.raises(Exception) as raised:
+    with pytest.raises(HouDocsError) as raised:
         InitService().import_assist("22.0.429")
 
-    assert getattr(raised.value, "error", None).code == "node_index_incomplete"
+    assert raised.value.error.code == "node_assist_target_missing"
     assert unresolved_path.read_bytes() == report_before
-    assert NodeRepository(paths.database).count() == before_count
+    assert NodeRepository(paths.database).resolve("Sop/example") == metadata_before
 
 
 def test_node_command_lists_token_costs_and_reads_detail(

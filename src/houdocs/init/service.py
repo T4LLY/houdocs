@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import sqlite3
 from pathlib import Path
@@ -75,13 +74,11 @@ class InitService:
 
         staged_unresolved = unresolved_path(staged_reports, snapshot.houdini_version)
         staged_node_dump = (
-            staged_reports
-            / f"houdini-node-types-{snapshot.houdini_version}.json"
+            staged_reports / f"houdini-node-types-{snapshot.houdini_version}.json"
         )
         staged_report = staged_reports / "init-report.json"
         final_node_dump = (
-            paths.reports
-            / f"houdini-node-types-{snapshot.houdini_version}.json"
+            paths.reports / f"houdini-node-types-{snapshot.houdini_version}.json"
         )
         final_report = paths.reports / "init-report.json"
 
@@ -208,11 +205,6 @@ class InitService:
         paths = VersionPaths.for_version(houdini_version, data_root=self.data_root)
         if not paths.database.is_file():
             raise HouDocsError("docs_index_missing", "Run houdocs init first.")
-        if not paths.docs.is_dir():
-            raise HouDocsError(
-                "docs_cache_missing",
-                f"Documentation cache is missing for Houdini {houdini_version}.",
-            )
 
         unresolved_file = unresolved_path(paths.reports, houdini_version)
         if not unresolved_file.is_file():
@@ -221,42 +213,14 @@ class InitService:
                 f"Node assist report is missing for Houdini {houdini_version}.",
             )
         overrides = load_overrides(unresolved_file)
-
-        node_dump_path = paths.reports / f"houdini-node-types-{houdini_version}.json"
-        try:
-            payload = json.loads(node_dump_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise HouDocsError(
-                "node_runtime_dump_missing",
-                f"Unable to read saved Houdini node metadata for {houdini_version}.",
-                detail=str(exc),
-            ) from exc
-
-        rows = payload.get("node_types") if isinstance(payload, dict) else None
-        if not isinstance(rows, list):
-            raise HouDocsError(
-                "node_runtime_dump_invalid",
-                f"Saved Houdini node metadata is invalid for {houdini_version}.",
-            )
-
-        # Import only affects node metadata. The assist report is the source of
-        # truth for manual work and is deliberately read-only in this mode.
-        result = NodeIndexer(
-            documents=DocumentRepository(paths.database),
-            repository=NodeRepository(paths.database),
-            docs_directory=paths.docs,
-            report_directory=paths.reports,
-        ).index_all(
-            tuple(item for item in rows if isinstance(item, dict)),
-            houdini_version=houdini_version,
-            overrides=overrides,
-            write_report=False,
-            fail_on_error=True,
+        return NodeRepository(paths.database).apply_parameter_overrides(
+            overrides["parameters"]
         )
-        return int(result.get("parameter_resolved_by_manual", 0))
 
     @staticmethod
-    def _collect_runtime_issues(snapshot: RuntimeSnapshot, reporter: InitReporter) -> None:
+    def _collect_runtime_issues(
+        snapshot: RuntimeSnapshot, reporter: InitReporter
+    ) -> None:
         for node in snapshot.node_types:
             parameter_error = node.get("parameter_error")
             if not isinstance(parameter_error, str) or not parameter_error:
@@ -267,7 +231,6 @@ class InitService:
                 parameter_error,
                 symbol=symbol if isinstance(symbol, str) else None,
             )
-
 
 
 def _staging_database(path: Path) -> Path:

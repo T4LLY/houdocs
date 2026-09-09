@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from houdocs.config import load_config
 from houdocs.init.probe import (
@@ -9,8 +12,39 @@ from houdocs.init.probe import (
     RuntimeParameterSnapshot,
     RuntimeSnapshot,
 )
-from houdocs.init.runtime import HoudiniInstallation
+from houdocs.errors import HouDocsError
+from houdocs.houdini.runtime import HoudiniInstallation
 from houdocs.init.service import InitService
+
+
+class FakeSession:
+    def __init__(self, installation: HoudiniInstallation, snapshot: RuntimeSnapshot) -> None:
+        self.installation = installation
+        self.snapshot = snapshot
+        self.root = installation.root.parent / "fake-houdini-session"
+
+    def __enter__(self) -> "FakeSession":
+        self.root.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        pass
+
+    def temporary_path(self, name: str) -> Path:
+        return self.root / name
+
+    def execute_python(
+        self,
+        source: str,
+        *,
+        filename: str = "command.py",
+    ) -> subprocess.CompletedProcess[str]:
+        del source, filename
+        self.temporary_path("runtime.json").write_text(
+            json.dumps(self.snapshot.payload),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess([], 0, "", "")
 
 
 class FakeRuntime:
@@ -18,20 +52,15 @@ class FakeRuntime:
         self.installation = installation
         self.snapshot = snapshot
         self.selected: list[str | None] = []
-        self.probed: list[tuple[HoudiniInstallation, str | None]] = []
+        self.sessions: list[HoudiniInstallation] = []
 
     def select(self, requested_version: str | None) -> HoudiniInstallation:
         self.selected.append(requested_version)
         return self.installation
 
-    def probe(
-        self,
-        installation: HoudiniInstallation,
-        *,
-        requested_version: str | None,
-    ) -> RuntimeSnapshot:
-        self.probed.append((installation, requested_version))
-        return self.snapshot
+    def session(self, installation: HoudiniInstallation) -> FakeSession:
+        self.sessions.append(installation)
+        return FakeSession(installation, self.snapshot)
 
 
 def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: Path) -> None:
@@ -52,12 +81,31 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
         "node_type_count": 2,
         "node_types": [
             {
+                "category": "Sop",
+                "name": "good",
                 "canonical_name": "Sop/good",
-                "parameters": [{"id": "strength"}],
+                "min_inputs": None,
+                "max_inputs": None,
+                "max_outputs": None,
+                "parameters": [
+                    {
+                        "parameter_ordinal": 0,
+                        "id": "strength",
+                        "label": "",
+                        "folder_path": [],
+                        "type": "",
+                        "is_multiparm": False,
+                    }
+                ],
                 "parameter_error": None,
             },
             {
+                "category": "Sop",
+                "name": "bad",
                 "canonical_name": "Sop/bad",
+                "min_inputs": None,
+                "max_inputs": None,
+                "max_outputs": None,
                 "parameters": [],
                 "parameter_error": "RuntimeError: broken template",
             },
@@ -140,7 +188,7 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     assert result["issues"][0]["kind"] == "node_parameter_introspection_error"
     assert result["issues"][0]["symbol"] == "Sop/bad"
     assert runtime.selected == ["22.0.429"]
-    assert runtime.probed == [(installation, "22.0.429")]
+    assert runtime.sessions == [installation]
 
 
 def _empty_runtime(tmp_path: Path) -> tuple[FakeRuntime, HoudiniInstallation]:
@@ -515,3 +563,23 @@ def test_init_artifact_promotion_rolls_back_all_existing_outputs(
     assert not staging.search_database.exists()
     assert not staging.docs.exists()
     assert not staging.reports.exists()
+
+
+def test_init_fails_before_runtime_selection_when_another_init_holds_lock(
+    tmp_path: Path,
+) -> None:
+    from houdocs.locking import OperationLock
+
+    class RuntimeThatMustNotStart:
+        def select(self, requested_version):
+            raise AssertionError("runtime selection must not start while init is locked")
+
+    data_root = tmp_path / "data"
+    config = load_config(tmp_path / "config.toml", cwd=tmp_path)
+    service = InitService(runtime=RuntimeThatMustNotStart(), data_root=data_root)
+
+    with OperationLock(data_root / "locks" / "init.lock"):
+        with pytest.raises(HouDocsError) as caught:
+            service.run("22.0.429", config=config)
+
+    assert caught.value.error.code == "init_in_progress"

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from houdocs.errors import HouDocsError
+from houdocs.houdini.session import HoudiniSession
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,28 @@ class RuntimeSnapshot:
     @property
     def parameter_error_count(self) -> int:
         return sum(1 for node in self.node_types if node.parameter_error)
+
+
+def probe_session(
+    session: HoudiniSession,
+    *,
+    requested_version: str | None,
+) -> RuntimeSnapshot:
+    result_path = session.temporary_path("runtime.json")
+    completed = session.execute_python(
+        build_probe_script(result_path),
+        filename="init-probe.py",
+    )
+    if completed.returncode != 0 or not result_path.is_file():
+        detail = (completed.stderr or completed.stdout or "").strip() or None
+        raise HouDocsError(
+            "runtime_probe_failed",
+            "Houdini initialization probe failed.",
+            detail=detail,
+        )
+    snapshot = load_probe_snapshot(result_path)
+    _validate_requested_runtime_version(requested_version, snapshot.houdini_version)
+    return snapshot
 
 
 def load_probe_snapshot(path: Path) -> RuntimeSnapshot:
@@ -224,6 +247,18 @@ def _invalid_runtime_field(location: str, detail: str) -> None:
         "Houdini initialization probe returned invalid node metadata.",
         detail=f"{location}: {detail}",
     )
+
+
+def _validate_requested_runtime_version(requested: str | None, actual: str) -> None:
+    if requested is None:
+        return
+    requested_parts = requested.split(".")
+    actual_parts = actual.split(".")
+    if actual_parts[: len(requested_parts)] != requested_parts:
+        raise HouDocsError(
+            "houdini_version_mismatch",
+            f"Requested Houdini {requested}, but runtime reported {actual}.",
+        )
 
 
 def build_probe_script(result_path: Path) -> str:

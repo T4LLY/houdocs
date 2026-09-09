@@ -132,3 +132,70 @@ def test_runtime_payload_rejects_invalid_nested_node_metadata(tmp_path: Path) ->
     assert caught.value.error.code == "runtime_probe_invalid"
     assert "node_types[0].parameters[0]" in (caught.value.error.detail or "")
     assert "folder_path" in (caught.value.error.detail or "")
+
+
+def test_probe_session_executes_init_probe_through_shared_session(tmp_path: Path) -> None:
+    import json
+    import subprocess
+
+    from houdocs.init.probe import probe_session
+
+    help_root = tmp_path / "help-session"
+    help_root.mkdir()
+
+    class Session:
+        def temporary_path(self, name: str) -> Path:
+            return tmp_path / name
+
+        def execute_python(self, source: str, *, filename: str = "command.py"):
+            assert filename == "init-probe.py"
+            assert "hou.applicationVersionString" in source
+            self.temporary_path("runtime.json").write_text(
+                json.dumps(
+                    {
+                        "houdini_version": "22.0.429",
+                        "help_directories": [str(help_root)],
+                        "node_types": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess([], 0, "", "")
+
+    snapshot = probe_session(Session(), requested_version="22.0.429")
+
+    assert snapshot.houdini_version == "22.0.429"
+    assert snapshot.help_directories == (help_root.resolve(),)
+
+
+def test_probe_session_rejects_runtime_version_mismatch(tmp_path: Path) -> None:
+    import json
+    import subprocess
+
+    from houdocs.init.probe import probe_session
+
+    help_root = tmp_path / "help-version"
+    help_root.mkdir()
+
+    class Session:
+        def temporary_path(self, name: str) -> Path:
+            return tmp_path / name
+
+        def execute_python(self, source: str, *, filename: str = "command.py"):
+            del source, filename
+            self.temporary_path("runtime.json").write_text(
+                json.dumps(
+                    {
+                        "houdini_version": "22.0.430",
+                        "help_directories": [str(help_root)],
+                        "node_types": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess([], 0, "", "")
+
+    with pytest.raises(HouDocsError) as caught:
+        probe_session(Session(), requested_version="22.0.429")
+
+    assert caught.value.error.code == "houdini_version_mismatch"

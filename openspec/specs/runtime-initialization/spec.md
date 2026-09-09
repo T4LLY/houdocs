@@ -80,3 +80,51 @@ The runtime-reported Houdini version SHALL be checked against an explicitly or c
 - **WHEN** `22.0.429` is requested
 - **AND** the runtime reports `22.0.430`
 - **THEN** initialization fails with `houdini_version_mismatch`
+
+### Requirement: Own Houdini process and connection lifecycle in a shared local session
+
+HouDocs SHALL encapsulate temporary Houdini process launch, local command-port discovery, `hcommand` execution, temporary session files, and process termination in a reusable Houdini session component. Init-specific probe code SHALL consume that session instead of managing ports or processes itself. The session SHALL let Houdini choose a free local command port and SHALL NOT reserve a port in a separate process before launch.
+
+#### Scenario: Start a temporary local session
+- **WHEN** initialization needs runtime metadata
+- **THEN** the shared Houdini session starts the selected installation
+- **AND** Houdini chooses its local command port internally
+- **AND** the chosen port is handed back through launch-local temporary state
+- **AND** init-specific code receives an already connected session without owning the port lifecycle
+
+#### Scenario: End a temporary local session
+- **WHEN** runtime metadata collection completes or fails
+- **THEN** HouDocs terminates the Houdini process it started
+- **AND** removes the launch-local temporary state
+
+### Requirement: Launch the selected installation with a consistent environment
+
+A spawned Houdini session SHALL set `HFS` to the selected installation root and place that installation's `bin` directory first in `PATH` without duplicating that same directory. Existing environment values from another Houdini installation SHALL NOT override the explicitly selected installation. On platforms where Houdini backgrounds itself by default, HouDocs SHALL launch it in foreground mode so the spawned process remains owned for the session lifetime.
+
+#### Scenario: Parent environment points at another Houdini
+- **WHEN** HouDocs selects Houdini `22.0.429`
+- **AND** the parent environment contains `HFS` or an earlier `PATH` entry for another Houdini build
+- **THEN** the spawned session uses the selected `22.0.429` root as `HFS`
+- **AND** its `bin` directory is first in `PATH`
+
+### Requirement: Resolve installation version from installation metadata when available
+
+Installation discovery SHALL prefer Houdini's installed version metadata over inferring the version only from the installation directory name. Directory-name parsing MAY be used as a fallback. A candidate whose version cannot be identified SHALL NOT be exposed as an installed version with a synthetic `0.0.0` value.
+
+#### Scenario: Installation uses a custom path name
+- **WHEN** a valid Houdini installation is located at a path that does not contain its version
+- **AND** its installed version metadata reports `22.0.429`
+- **THEN** discovery identifies the installation as `22.0.429`
+
+### Requirement: Serialize init mutations per HouDocs data root
+
+HouDocs SHALL allow at most one init mutation at a time for a HouDocs data root. The exclusion SHALL use an OS-backed non-blocking lock rather than treating lock-file existence or a stored PID as authoritative. The lock policy belongs to init; the underlying lock primitive MAY be reused by other operations with their own policies.
+
+#### Scenario: Another init is already running
+- **WHEN** the init lock for the same HouDocs data root is already held
+- **THEN** a second init attempt fails immediately with `init_in_progress`
+- **AND** it does not select or launch Houdini
+
+#### Scenario: Previous process exited abnormally
+- **WHEN** a lock file remains on disk but no process holds the OS lock
+- **THEN** a later init can acquire the lock normally

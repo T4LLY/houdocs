@@ -277,7 +277,7 @@ def test_init_summary_omits_full_issue_details() -> None:
 def test_init_existing_database_requires_explicit_y_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from houdocs.init.runtime import HoudiniInstallation, HoudiniRuntime
+    from houdocs.houdini.runtime import HoudiniInstallation, HoudiniRuntime
     from houdocs.init.service import InitService
 
     installation_root = Path("/fake/Houdini 22.0.429")
@@ -459,7 +459,7 @@ def test_init_import_assist_updates_existing_node_metadata_without_cached_source
 def test_init_confirmation_also_guards_existing_search_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from houdocs.init.runtime import HoudiniInstallation, HoudiniRuntime
+    from houdocs.houdini.runtime import HoudiniInstallation, HoudiniRuntime
     from houdocs.init.service import InitService
 
     installation_root = Path("/fake/Houdini 22.0.429")

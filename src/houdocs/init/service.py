@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
-from houdocs.config import HouDocsConfig
+from houdocs.config import HouDocsConfig, default_data_root
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer
@@ -10,9 +12,11 @@ from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
 from houdocs.init.progress import InitProgress
 from houdocs.init.report import InitReporter, write_json_atomic
+from houdocs.houdini.runtime import HoudiniRuntime
+from houdocs.init import probe as runtime_probe
 from houdocs.init.probe import RuntimeSnapshot
-from houdocs.init.runtime import HoudiniRuntime
 from houdocs.init.staging import InitStaging
+from houdocs.locking import LockUnavailable, OperationLock
 from houdocs.node.index import NodeIndexer
 from houdocs.node.repository import NodeRepository
 from houdocs.node.unresolved import load_overrides, unresolved_path
@@ -45,16 +49,31 @@ class InitService:
         config: HouDocsConfig,
         progress: InitProgress | None = None,
     ) -> dict[str, object]:
+        with self._init_lock():
+            return self._run_locked(
+                requested_version,
+                config=config,
+                progress=progress,
+            )
+
+    def _run_locked(
+        self,
+        requested_version: str | None,
+        *,
+        config: HouDocsConfig,
+        progress: InitProgress | None,
+    ) -> dict[str, object]:
         progress_view = progress or InitProgress(False)
         with progress_view.phase("inspect Houdini"):
             installation = self.runtime.select(requested_version)
             progress_view.show(
                 f"Starting and inspecting Houdini {installation.version_string}"
             )
-            snapshot = self.runtime.probe(
-                installation,
-                requested_version=requested_version,
-            )
+            with self.runtime.session(installation) as session:
+                snapshot = runtime_probe.probe_session(
+                    session,
+                    requested_version=requested_version,
+                )
             paths = VersionPaths.for_version(
                 snapshot.houdini_version, data_root=self.data_root
             )
@@ -193,20 +212,33 @@ class InitService:
             return report
 
     def import_assist(self, houdini_version: str) -> int:
-        paths = VersionPaths.for_version(houdini_version, data_root=self.data_root)
-        if not paths.database.is_file():
-            raise HouDocsError("docs_index_missing", "Run houdocs init first.")
+        with self._init_lock():
+            paths = VersionPaths.for_version(houdini_version, data_root=self.data_root)
+            if not paths.database.is_file():
+                raise HouDocsError("docs_index_missing", "Run houdocs init first.")
 
-        unresolved_file = unresolved_path(paths.reports, houdini_version)
-        if not unresolved_file.is_file():
-            raise HouDocsError(
-                "node_assist_missing",
-                f"Node assist report is missing for Houdini {houdini_version}.",
+            unresolved_file = unresolved_path(paths.reports, houdini_version)
+            if not unresolved_file.is_file():
+                raise HouDocsError(
+                    "node_assist_missing",
+                    f"Node assist report is missing for Houdini {houdini_version}.",
+                )
+            overrides = load_overrides(unresolved_file)
+            return NodeRepository(paths.database).apply_parameter_overrides(
+                overrides["parameters"]
             )
-        overrides = load_overrides(unresolved_file)
-        return NodeRepository(paths.database).apply_parameter_overrides(
-            overrides["parameters"]
-        )
+
+    @contextmanager
+    def _init_lock(self) -> Iterator[None]:
+        root = (self.data_root or default_data_root()).expanduser().resolve()
+        try:
+            with OperationLock(root / "locks" / "init.lock"):
+                yield
+        except LockUnavailable as exc:
+            raise HouDocsError(
+                "init_in_progress",
+                "Another HouDocs init operation is already running.",
+            ) from exc
 
     @staticmethod
     def _collect_runtime_issues(

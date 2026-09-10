@@ -10,6 +10,7 @@ import numpy as np
 
 from houdocs.db.connection import connect_readonly, connect_writable
 from houdocs.errors import HouDocsError
+from houdocs.search.cache import EmbeddingCache
 from houdocs.search.dense import SQLiteVecIndex
 from houdocs.search.embedding import EmbeddingProvider
 from houdocs.search.lexical import SQLiteFtsIndex
@@ -46,6 +47,7 @@ class HybridSearchBackend:
         self.candidate_min = candidate_min
         self.lexical = SQLiteFtsIndex(self._read)
         self.dense = dense_index or SQLiteVecIndex(database)
+        self.embedding_cache = EmbeddingCache(database)
 
     def _read(self) -> sqlite3.Connection:
         return connect_readonly(self.database)
@@ -66,7 +68,7 @@ class HybridSearchBackend:
             grouped.setdefault(entry.embedding_profile, []).append(entry)
         vectors_by_profile: dict[str, dict[str, np.ndarray]] = {}
         for profile, group in grouped.items():
-            vectors_by_profile[profile] = self._ensure_vector_cache(
+            vectors_by_profile[profile] = self._vectors_for_entries(
                 profile,
                 group,
                 embedding_progress=embedding_progress,
@@ -152,8 +154,9 @@ class HybridSearchBackend:
             grouped.setdefault(entry.embedding_profile, set()).add(entry.content_hash)
         missing = 0
         for profile, content_hashes in grouped.items():
-            cached = self._cached_hashes(profile, sorted(content_hashes))
-            missing += len(content_hashes - cached)
+            missing += self.embedding_cache.missing_count(
+                profile, sorted(content_hashes)
+            )
         return missing
 
     def search(
@@ -286,7 +289,7 @@ class HybridSearchBackend:
             )
         return found
 
-    def _ensure_vector_cache(
+    def _vectors_for_entries(
         self,
         profile: str,
         entries: Sequence[SearchEntry],
@@ -296,7 +299,7 @@ class HybridSearchBackend:
         if not entries:
             return {}
         unique_hashes = list(dict.fromkeys(entry.content_hash for entry in entries))
-        cached = self._vectors_for_hashes(profile, unique_hashes)
+        cached = self.embedding_cache.vectors(profile, unique_hashes)
         missing_hashes = [item for item in unique_hashes if item not in cached]
         if missing_hashes:
             content_by_hash: dict[str, str] = {}
@@ -313,73 +316,14 @@ class HybridSearchBackend:
                     "embedding_protocol_error",
                     "Embedding provider returned the wrong vector count.",
                 )
-            with self._write() as connection:
-                for content_hash, vector in zip(missing_hashes, vectors):
-                    normalized = np.asarray(vector, dtype=np.float32).reshape(-1)
-                    connection.execute(
-                        """
-                        INSERT OR REPLACE INTO embedding_cache(
-                            embedding_profile_id, content_hash, dimensions, vector
-                        ) VALUES (?, ?, ?, ?)
-                        """,
-                        (profile, content_hash, len(normalized), normalized.tobytes()),
-                    )
-                    cached[content_hash] = normalized.copy()
-                connection.commit()
+            cached.update(
+                self.embedding_cache.store(
+                    profile, dict(zip(missing_hashes, vectors, strict=True))
+                )
+            )
             if embedding_progress is not None:
                 embedding_progress(len(missing_hashes), elapsed)
         return cached
-
-    def _cached_hashes(
-        self,
-        profile: str,
-        content_hashes: Sequence[str],
-    ) -> set[str]:
-        if not content_hashes:
-            return set()
-        found: set[str] = set()
-        for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
-            batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
-            placeholders = ",".join("?" for _ in batch)
-            with self._read() as connection:
-                rows = connection.execute(
-                    f"""
-                    SELECT content_hash FROM embedding_cache
-                    WHERE embedding_profile_id = ? AND content_hash IN ({placeholders})
-                    """,
-                    (profile, *batch),
-                ).fetchall()
-            found.update(str(row["content_hash"]) for row in rows)
-        return found
-
-    def _vectors_for_hashes(
-        self,
-        profile: str,
-        content_hashes: Sequence[str],
-    ) -> dict[str, np.ndarray]:
-        if not content_hashes:
-            return {}
-        found: dict[str, np.ndarray] = {}
-        for start in range(0, len(content_hashes), _SQLITE_IN_BATCH_SIZE):
-            batch = content_hashes[start : start + _SQLITE_IN_BATCH_SIZE]
-            placeholders = ",".join("?" for _ in batch)
-            with self._read() as connection:
-                rows = connection.execute(
-                    f"""
-                    SELECT content_hash, dimensions, vector FROM embedding_cache
-                    WHERE embedding_profile_id = ? AND content_hash IN ({placeholders})
-                    """,
-                    (profile, *batch),
-                ).fetchall()
-            for row in rows:
-                vector = np.frombuffer(row["vector"], dtype=np.float32)
-                if len(vector) != int(row["dimensions"]):
-                    raise HouDocsError(
-                        "embedding_cache_corrupt",
-                        "Embedding cache dimensions do not match payload.",
-                    )
-                found[str(row["content_hash"])] = vector.copy()
-        return found
 
     @staticmethod
     def _row_to_stored(row: sqlite3.Row) -> _StoredEntry:

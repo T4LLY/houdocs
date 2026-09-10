@@ -134,7 +134,7 @@ def _search_backend(paths: VersionPaths, config: HouDocsConfig) -> HybridSearchB
     )
 
 
-@app.command("init")
+@app.command("init", help="Initialize Houdini documentation data.")
 def init_command(
     houdini_version: Annotated[
         str | None,
@@ -193,7 +193,7 @@ def init_command(
     _invoke(action)
 
 
-@app.command("search")
+@app.command("search", help="Search Houdini documentation.")
 def search_command(
     query: Annotated[str, typer.Argument(metavar="QUERY")],
     domain: Annotated[
@@ -216,7 +216,7 @@ def search_command(
     _invoke(action)
 
 
-@app.command("read")
+@app.command("read", help="Read a documentation page.")
 def read_command(
     page: Annotated[str, typer.Argument(metavar="PAGE")],
     section: Annotated[str | None, typer.Argument(metavar="SECTION")] = None,
@@ -241,7 +241,7 @@ def read_command(
     _invoke(action)
 
 
-@app.command("sections")
+@app.command("sections", help="List page sections.")
 def sections_command(
     page: Annotated[str, typer.Argument(metavar="PAGE")],
     pick: Annotated[
@@ -265,7 +265,7 @@ def sections_command(
     _invoke(action)
 
 
-@app.command("node")
+@app.command("node", help="Read node documentation.")
 def node_command(
     node_type: Annotated[str, typer.Argument(metavar="NODE_TYPE")],
 ) -> None:
@@ -284,7 +284,7 @@ def node_command(
     _invoke(action)
 
 
-@app.command("hom")
+@app.command("hom", help="Read HOM documentation.")
 def hom_command(
     symbol: Annotated[str, typer.Argument(metavar="SYMBOL")],
 ) -> None:
@@ -302,7 +302,7 @@ def hom_command(
     _invoke(action)
 
 
-@app.command("vex")
+@app.command("vex", help="Read VEX documentation.")
 def vex_command(
     function: Annotated[str, typer.Argument(metavar="FUNCTION")],
 ) -> None:

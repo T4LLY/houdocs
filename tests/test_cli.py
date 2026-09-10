@@ -81,8 +81,19 @@ def test_cli_exposes_only_the_planned_top_level_commands() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("init", "search", "read", "sections", "node", "hom", "vex", "hip"):
+    expected_help = {
+        "init": "Initialize Houdini documentation data.",
+        "search": "Search Houdini documentation.",
+        "read": "Read a documentation page.",
+        "sections": "List page sections.",
+        "node": "Read node documentation.",
+        "hom": "Read HOM documentation.",
+        "vex": "Read VEX documentation.",
+        "hip": "Dump and search Houdini HIP files.",
+    }
+    for command, help_text in expected_help.items():
         assert command in result.stdout
+        assert help_text in result.stdout
     assert "python" not in result.stdout
 
 

@@ -1,4 +1,4 @@
-from houdocs.node.resolver import _group_matches_folder
+from houdocs.node.parameter_resolution import _group_matches_folder
 
 
 class TestGroupMatchesFolder:

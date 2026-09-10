@@ -10,7 +10,8 @@ from houdocs.init.probe import RuntimeNodeSnapshot
 from houdocs.node.models import NodeDocumentRecord, RuntimeNodeType, RuntimeParameter
 from houdocs.node.parser import context_for_category, parse_node_document, should_index_node_document
 from houdocs.node.repository import NodeRepository
-from houdocs.node.resolver import NodeTypeCatalog, build_node_metadata
+from houdocs.node.catalog import NodeTypeCatalog
+from houdocs.node.resolver import build_node_metadata
 from houdocs.node.unresolved import load_overrides, unresolved_path, write_unresolved
 
 

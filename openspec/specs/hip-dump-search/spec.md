@@ -79,13 +79,13 @@ The public search command SHALL be `houdocs hip search <QUERY> --root <SEARCH_RO
 
 ### Requirement: Resolve hits to node fields
 
-After the mmap prefilter matches a shard, HouDocs SHALL parse that shard and resolve matches within scalar node fields. A hit SHALL contain the Houdini node path, search-root-relative file path, RFC 6901 JSON Pointer for the matched scalar field, a minimal snippet, occurrence count, and reference token count for the full matched field. The token count SHALL use HouDocs' OpenAI `o200k_base` counter. The minimal snippet SHALL contain the matched literal query without returning the full field.
+After the mmap prefilter matches a shard, HouDocs SHALL parse that shard and resolve matches within scalar node fields. A hit SHALL contain the Houdini node path, search-root-relative file path, RFC 6901 JSON Pointer for the matched scalar field, occurrence count, and reference token count for the full matched field. The token count SHALL use HouDocs' OpenAI `o200k_base` counter.
 
 #### Scenario: Query occurs repeatedly in one field
 - **WHEN** one parameter field contains the query three times
 - **THEN** one hit is emitted for that node and JSON Pointer
 - **AND** `occurrences` is `3`
-- **AND** `tokens` describes the complete matched field rather than the snippet
+- **AND** `tokens` describes the complete matched field
 
 ### Requirement: Aggregate by node and field
 
@@ -106,12 +106,12 @@ Multiple occurrences within the same scalar field SHALL produce one hit. Distinc
 
 ### Requirement: Write hits to the output file and only a summary to stdout
 
-The search output file SHALL contain an object with a `hits` array. Each hit SHALL contain `node`, `file`, `pointer`, `snippet`, `occurrences`, and `tokens`. Normal stdout SHALL contain only the hit count and resolved output path.
+The search output file SHALL contain an object with a `hits` array. Each hit SHALL contain `node`, `file`, `pointer`, `occurrences`, and `tokens`. Normal stdout SHALL contain only the hit count and resolved output path.
 
 #### Scenario: Search finds fourteen fields
 - **WHEN** fourteen aggregated hits are written to the output file
 - **THEN** stdout is equivalent to `{"hits":14,"output":"/path/to/hits.json"}`
-- **AND** stdout contains no hit bodies, snippets, or node data
+- **AND** stdout contains no hit bodies or node data
 
 ### Requirement: HIP search is offline
 

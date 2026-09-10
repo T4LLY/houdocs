@@ -135,79 +135,97 @@ def test_runtime_payload_rejects_invalid_nested_node_metadata(tmp_path: Path) ->
 
 
 
-def _write_probe_result(arguments: tuple[object, ...], payload: dict[str, object]) -> None:
+
+def test_probe_session_executes_init_worker_through_houdini_session(tmp_path: Path) -> None:
     import json
-
-    assert arguments[0] == "--output"
-    Path(arguments[1]).write_text(json.dumps(payload), encoding="utf-8")
-
-
-def test_probe_hython_executes_init_worker_through_shared_runner(tmp_path: Path) -> None:
     import subprocess
 
-    from houdocs.init.probe import probe_hython
+    from houdocs.init.probe import probe_session
 
-    help_root = tmp_path / "help-hython"
+    help_root = tmp_path / "help-session"
     help_root.mkdir()
 
-    class Runner:
-        def execute_script(self, script: Path, arguments=()):
-            assert script.name == "worker.py"
-            assert script.parent.name == "init"
-            _write_probe_result(
-                tuple(arguments),
-                {
-                    "houdini_version": "22.0.429",
-                    "help_directories": [str(help_root)],
-                    "node_types": [],
-                },
+    class Session:
+        def __init__(self) -> None:
+            self.root = tmp_path / "session"
+            self.root.mkdir()
+            self.source = ""
+
+        def temporary_path(self, name: str) -> Path:
+            return self.root / name
+
+        def execute_python(self, source: str, *, filename: str = "command.py"):
+            self.source = source
+            assert filename == "init-probe.py"
+            self.temporary_path("runtime.json").write_text(
+                json.dumps(
+                    {
+                        "houdini_version": "22.0.429",
+                        "help_directories": [str(help_root)],
+                        "node_types": [],
+                    }
+                ),
+                encoding="utf-8",
             )
             return subprocess.CompletedProcess([], 0, "", "")
 
-    snapshot = probe_hython(Runner(), requested_version="22.0.429")
+    session = Session()
+    snapshot = probe_session(session, requested_version="22.0.429")
 
     assert snapshot.houdini_version == "22.0.429"
     assert snapshot.help_directories == (help_root.resolve(),)
+    assert "worker.py" in session.source
+    assert "write_payload" in session.source
 
 
-def test_probe_hython_rejects_runtime_version_mismatch(tmp_path: Path) -> None:
+def test_probe_session_rejects_runtime_version_mismatch(tmp_path: Path) -> None:
+    import json
     import subprocess
 
-    from houdocs.init.probe import probe_hython
+    from houdocs.init.probe import probe_session
 
     help_root = tmp_path / "help-version"
     help_root.mkdir()
 
-    class Runner:
-        def execute_script(self, script: Path, arguments=()):
-            del script
-            _write_probe_result(
-                tuple(arguments),
-                {
-                    "houdini_version": "22.0.430",
-                    "help_directories": [str(help_root)],
-                    "node_types": [],
-                },
+    class Session:
+        def temporary_path(self, name: str) -> Path:
+            return tmp_path / name
+
+        def execute_python(self, source: str, *, filename: str = "command.py"):
+            del source, filename
+            self.temporary_path("runtime.json").write_text(
+                json.dumps(
+                    {
+                        "houdini_version": "22.0.430",
+                        "help_directories": [str(help_root)],
+                        "node_types": [],
+                    }
+                ),
+                encoding="utf-8",
             )
             return subprocess.CompletedProcess([], 0, "", "")
 
     with pytest.raises(HouDocsError) as caught:
-        probe_hython(Runner(), requested_version="22.0.429")
+        probe_session(Session(), requested_version="22.0.429")
 
     assert caught.value.error.code == "houdini_version_mismatch"
 
 
-def test_probe_hython_maps_runner_failure_to_runtime_probe_error() -> None:
-    from houdocs.houdini.hython import HythonExecutionError
-    from houdocs.init.probe import probe_hython
+def test_probe_session_maps_command_failure_to_runtime_probe_error(tmp_path: Path) -> None:
+    import subprocess
 
-    class Runner:
-        def execute_script(self, script: Path, arguments=()):
-            del script, arguments
-            raise HythonExecutionError("failed", detail="worker failed")
+    from houdocs.init.probe import probe_session
+
+    class Session:
+        def temporary_path(self, name: str) -> Path:
+            return tmp_path / name
+
+        def execute_python(self, source: str, *, filename: str = "command.py"):
+            del source, filename
+            return subprocess.CompletedProcess([], 1, "", "worker failed")
 
     with pytest.raises(HouDocsError) as caught:
-        probe_hython(Runner(), requested_version=None)
+        probe_session(Session(), requested_version=None)
 
     assert caught.value.error.code == "runtime_probe_failed"
     assert caught.value.error.detail == "worker failed"

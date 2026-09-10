@@ -51,7 +51,6 @@ def test_hip_search_mmaps_candidates_and_aggregates_same_field(tmp_path: Path) -
                 "node": "/obj/geo1/wrangle1",
                 "file": "obj/geo1.json",
                 "pointer": "/nodes/wrangle1/parms/snippet",
-                "snippet": "setpointattrib",
                 "occurrences": 2,
                 "tokens": len(text),
             }

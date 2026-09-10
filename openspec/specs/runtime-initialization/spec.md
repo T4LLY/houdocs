@@ -25,11 +25,11 @@ Define the one-time Houdini runtime access used by `houdocs init` to discover th
 
 ### Requirement: Keep Houdini execution targeting internal
 
-Initialization SHALL execute the selected installation through HouDocs' shared headless hython runner and SHALL NOT require public host, port, hcommand, or executable selection options.
+Initialization SHALL create its Houdini runtime session internally and SHALL NOT require public host, port, hcommand, or executable selection options.
 
 #### Scenario: Initialize an installed version
 - **WHEN** the caller runs `houdocs init --houdini-version 22.0.429`
-- **THEN** HouDocs executes the selected installation's hython as needed
+- **THEN** HouDocs starts the selected Houdini installation and creates its local runtime session internally
 - **AND** the caller supplies no host, port, hcommand, or executable path
 
 ### Requirement: Obtain Help directories from Houdini
@@ -80,29 +80,29 @@ The runtime-reported Houdini version SHALL be checked against an explicitly or c
 - **AND** the runtime reports `22.0.430`
 - **THEN** initialization fails with `houdini_version_mismatch`
 
-### Requirement: Use one shared one-shot hython execution boundary
+### Requirement: Use a reusable local Houdini session boundary
 
-HouDocs SHALL encapsulate selected-hython subprocess invocation, environment construction, stdout/stderr capture, timeout handling, and script execution in a reusable hython runner. Init-specific probe code and HIP dump code SHALL consume this runner instead of implementing their own Houdini executable discovery or subprocess environment logic. Houdini-side workers SHALL be self-contained scripts and SHALL NOT depend on HouDocs runtime packages inside the hython environment. One-shot operations SHALL NOT open a Houdini command port or require `hcommand`.
+HouDocs SHALL encapsulate temporary Houdini process launch, local command-port discovery, `hcommand` execution, temporary session files, and process termination in a reusable Houdini session component. Init-specific probe code SHALL consume that session instead of managing ports or processes itself. The session SHALL let Houdini choose a free local command port and SHALL NOT reserve a port in a separate process before launch. HIP dumping MAY use the selected installation's `hython` directly for its independent one-shot worker and SHALL NOT change the init session lifecycle.
 
 #### Scenario: Run the initialization probe
 - **WHEN** initialization needs runtime metadata
-- **THEN** the init probe is executed through the shared hython runner
-- **AND** the probe owns only its worker/result contract, not process-discovery or environment setup
-- **AND** the worker is executed as a standalone script rather than generated as a host-side Python source string
+- **THEN** HouDocs creates a local Houdini session for the selected installation
+- **AND** executes the init probe through that session's command port
+- **AND** the probe owns only its worker/result contract, not Houdini process or port management
 
-#### Scenario: Run another one-shot Houdini operation
+#### Scenario: Run HIP dumping
 - **WHEN** HIP dumping needs to load and inspect a HIP
-- **THEN** it uses the same selected-installation and hython execution boundary
-- **AND** does not duplicate init-specific execution code
+- **THEN** it may execute its self-contained worker with the selected installation's `hython`
+- **AND** it shares installation selection and environment construction without replacing the init session model
 
-### Requirement: Launch the selected hython with a consistent environment
+### Requirement: Launch the selected Houdini tools with a consistent environment
 
-A spawned hython process SHALL set `HFS` to the selected installation root and place that installation's `bin` directory first in `PATH` without duplicating that same directory. Existing environment values from another Houdini installation SHALL NOT override the explicitly selected installation.
+A spawned Houdini or hython process and `hcommand` invocation SHALL set `HFS` to the selected installation root and place that installation's `bin` directory first in `PATH` without duplicating that same directory. Existing environment values from another Houdini installation SHALL NOT override the explicitly selected installation.
 
 #### Scenario: Parent environment points at another Houdini
 - **WHEN** HouDocs selects Houdini `22.0.429`
 - **AND** the parent environment contains `HFS` or an earlier `PATH` entry for another Houdini build
-- **THEN** the spawned hython uses the selected `22.0.429` root as `HFS`
+- **THEN** spawned Houdini tools use the selected `22.0.429` root as `HFS`
 - **AND** its `bin` directory is first in `PATH`
 
 ### Requirement: Resolve installation version from installation metadata when available

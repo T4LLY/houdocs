@@ -15,7 +15,6 @@ class HipSearchHit:
     node: str
     file: str
     pointer: str
-    snippet: str
     occurrences: int
     tokens: int
 
@@ -24,7 +23,6 @@ class HipSearchHit:
             "node": self.node,
             "file": self.file,
             "pointer": self.pointer,
-            "snippet": self.snippet,
             "occurrences": self.occurrences,
             "tokens": self.tokens,
         }
@@ -148,7 +146,6 @@ def _hits_for_shard(
                     node=node_path,
                     file=relative_file,
                     pointer=pointer,
-                    snippet=query,
                     occurrences=occurrences,
                     tokens=token_counter(text),
                 )

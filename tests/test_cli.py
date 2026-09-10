@@ -296,6 +296,8 @@ def test_init_existing_database_requires_explicit_y_confirmation(
         root=installation_root,
         bin_dir=installation_root / "bin",
         hython=installation_root / "bin" / "hython",
+        hcommand=installation_root / "bin" / "hcommand",
+        houdini=installation_root / "bin" / "houdini",
         version=(22, 0, 429),
     )
     monkeypatch.setattr(
@@ -477,6 +479,8 @@ def test_init_confirmation_also_guards_existing_search_database(
         root=installation_root,
         bin_dir=installation_root / "bin",
         hython=installation_root / "bin" / "hython",
+        hcommand=installation_root / "bin" / "hcommand",
+        houdini=installation_root / "bin" / "houdini",
         version=(22, 0, 429),
     )
     monkeypatch.setattr(

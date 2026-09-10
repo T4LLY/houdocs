@@ -15,7 +15,7 @@ def _imports(path: Path) -> set[str]:
     return names
 
 
-def test_direct_hou_import_is_confined_to_hython_worker() -> None:
+def test_direct_hou_import_is_confined_to_houdini_workers() -> None:
     root = Path(__file__).parents[1]
     paths = list((root / "src" / "houdocs").rglob("*.py"))
     paths.append(root / "tools" / "node_document_assist.py")
@@ -49,7 +49,7 @@ def test_search_indexer_does_not_depend_on_reader_modules() -> None:
     assert "houdocs.vex_docs.read" not in imports
 
 
-def test_hython_workers_do_not_import_houdocs_runtime_packages() -> None:
+def test_houdini_workers_do_not_import_houdocs_runtime_packages() -> None:
     root = Path(__file__).parents[1]
     workers = (
         root / "src" / "houdocs" / "hip" / "worker.py",

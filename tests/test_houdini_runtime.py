@@ -18,6 +18,8 @@ def _installation(root: Path, version: tuple[int, int, int]) -> HoudiniInstallat
         root=root,
         bin_dir=bin_dir,
         hython=bin_dir / "hython.exe",
+        hcommand=bin_dir / "hcommand.exe",
+        houdini=bin_dir / "houdini.exe",
         version=version,
     )
 
@@ -69,6 +71,8 @@ def test_discovery_finds_windows_sidefx_installations(tmp_path: Path) -> None:
     bin_dir = root / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "hython.exe").write_bytes(b"")
+    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "houdini.exe").write_bytes(b"")
 
     installs = discover_houdini_installations(
         environ={"ProgramFiles": str(tmp_path), "PATH": ""},
@@ -87,6 +91,8 @@ def test_discovery_reads_version_header_for_custom_installation_path(tmp_path: P
     bin_dir.mkdir(parents=True)
     header.parent.mkdir(parents=True)
     (bin_dir / "hython.exe").write_bytes(b"")
+    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "houdini.exe").write_bytes(b"")
     header.write_text('#define SYS_VERSION_FULL "22.0.429"\n', encoding="utf-8")
 
     installs = discover_houdini_installations(
@@ -104,6 +110,8 @@ def test_discovery_ignores_installation_when_version_cannot_be_identified(tmp_pa
     bin_dir = root / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "hython.exe").write_bytes(b"")
+    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "houdini.exe").write_bytes(b"")
 
     installs = discover_houdini_installations(
         environ={"HFS": str(root), "PATH": ""},

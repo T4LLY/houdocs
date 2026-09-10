@@ -172,13 +172,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
+def write_payload(output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
         json.dumps(build_payload(), ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    write_payload(args.output)
     return 0
 
 

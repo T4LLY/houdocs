@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from houdocs.errors import HouDocsError
-from houdocs.houdini.hython import HythonExecutionError, HythonRunner
+from houdocs.houdini.session import HoudiniSession
 
 
 @dataclass(frozen=True)
@@ -52,35 +51,36 @@ class RuntimeSnapshot:
         return sum(1 for node in self.node_types if node.parameter_error)
 
 
-def probe_hython(
-    runner: HythonRunner,
+def probe_session(
+    session: HoudiniSession,
     *,
     requested_version: str | None,
 ) -> RuntimeSnapshot:
-    with tempfile.TemporaryDirectory(prefix="houdocs-init-probe-") as temporary:
-        result_path = Path(temporary) / "runtime.json"
-        worker = Path(__file__).with_name("worker.py")
-        try:
-            completed = runner.execute_script(
-                worker,
-                ("--output", result_path),
-            )
-        except HythonExecutionError as exc:
-            raise HouDocsError(
-                "runtime_probe_failed",
-                "Houdini initialization probe failed.",
-                detail=exc.detail or str(exc),
-            ) from exc
-        if completed.returncode != 0 or not result_path.is_file():
-            detail = (completed.stderr or completed.stdout or "").strip() or None
-            raise HouDocsError(
-                "runtime_probe_failed",
-                "Houdini initialization probe failed.",
-                detail=detail,
-            )
-        snapshot = load_probe_snapshot(result_path)
+    result_path = session.temporary_path("runtime.json")
+    worker = Path(__file__).with_name("worker.py").resolve()
+    completed = session.execute_python(
+        _worker_source(worker, result_path),
+        filename="init-probe.py",
+    )
+    if completed.returncode != 0 or not result_path.is_file():
+        detail = (completed.stderr or completed.stdout or "").strip() or None
+        raise HouDocsError(
+            "runtime_probe_failed",
+            "Houdini initialization probe failed.",
+            detail=detail,
+        )
+    snapshot = load_probe_snapshot(result_path)
     _validate_requested_runtime_version(requested_version, snapshot.houdini_version)
     return snapshot
+
+
+def _worker_source(worker: Path, result_path: Path) -> str:
+    return (
+        "from pathlib import Path\n"
+        "import runpy\n"
+        f"namespace = runpy.run_path({str(worker)!r}, run_name='houdocs_init_worker')\n"
+        f"namespace['write_payload'](Path({str(result_path)!r}))\n"
+    )
 
 
 def load_probe_snapshot(path: Path) -> RuntimeSnapshot:

@@ -14,21 +14,6 @@ from houdocs.hip.worker import _trim_parms, run_worker
 from houdocs.houdini.runtime import HoudiniInstallation
 
 
-class FakeRunner:
-    def __init__(self) -> None:
-        self.calls: list[tuple[Path, tuple[object, ...], float | None]] = []
-
-    def execute_script(self, script, arguments=(), *, timeout_seconds=None):
-        args = tuple(arguments)
-        self.calls.append((Path(script), args, timeout_seconds))
-        values = {str(args[index]): Path(args[index + 1]) for index in range(0, len(args), 2)}
-        output = values["--output"]
-        output.joinpath("search").mkdir(parents=True, exist_ok=True)
-        output.joinpath("raw.json").write_text("{}", encoding="utf-8")
-        values["--status"].write_text('{"ok":true}', encoding="utf-8")
-        return subprocess.CompletedProcess([], 0, "", "")
-
-
 class FakeRuntime:
     def __init__(self, tmp_path: Path) -> None:
         root = tmp_path / "Houdini22.0.429"
@@ -36,27 +21,41 @@ class FakeRuntime:
             root=root,
             bin_dir=root / "bin",
             hython=root / "bin" / "hython.exe",
+            hcommand=root / "bin" / "hcommand.exe",
+            houdini=root / "bin" / "houdini.exe",
             version=(22, 0, 429),
         )
         self.selected: list[str | None] = []
-        self.runner_instance = FakeRunner()
 
     def select(self, requested_version: str | None) -> HoudiniInstallation:
         self.selected.append(requested_version)
         return self.installation
 
-    def runner(self, installation: HoudiniInstallation) -> FakeRunner:
-        assert installation == self.installation
-        return self.runner_instance
+
+class FakeHythonRun:
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def __call__(self, args, **kwargs):
+        command = [str(value) for value in args]
+        self.calls.append((command, kwargs))
+        worker_args = command[3:]
+        values = {worker_args[index]: Path(worker_args[index + 1]) for index in range(0, len(worker_args), 2)}
+        output = values["--output"]
+        output.joinpath("search").mkdir(parents=True, exist_ok=True)
+        output.joinpath("raw.json").write_text("{}", encoding="utf-8")
+        values["--status"].write_text('{"ok":true}', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
 
 
-def test_hip_dump_uses_selected_houdini_runner_and_explicit_output(tmp_path: Path) -> None:
+def test_hip_dump_uses_selected_hython_for_explicit_output(tmp_path: Path) -> None:
     hip = tmp_path / "scene.hip"
     hip.write_bytes(b"hip")
     output = tmp_path / "dump"
     runtime = FakeRuntime(tmp_path)
+    fake_run = FakeHythonRun()
 
-    result = HipDumpService(runtime=runtime).dump(
+    result = HipDumpService(runtime=runtime, run=fake_run).dump(
         hip,
         requested_version="22.0.429",
         output=output,
@@ -66,19 +65,22 @@ def test_hip_dump_uses_selected_houdini_runner_and_explicit_output(tmp_path: Pat
     assert runtime.selected == ["22.0.429"]
     assert (output / "raw.json").is_file()
     assert (output / "search").is_dir()
-    assert len(runtime.runner_instance.calls) == 1
-    script, arguments, _timeout = runtime.runner_instance.calls[0]
-    assert script.name == "worker.py"
-    assert "--hip" in arguments
-    assert str(hip.resolve()) in [str(value) for value in arguments]
+    assert len(fake_run.calls) == 1
+    command, kwargs = fake_run.calls[0]
+    assert command[0] == str(runtime.installation.hython)
+    assert Path(command[2]).name == "worker.py"
+    assert "--hip" in command
+    assert str(hip.resolve()) in command
+    assert kwargs["env"]["HFS"] == str(runtime.installation.root)
 
 
 def test_hip_dump_defaults_to_persistent_temp_output(tmp_path: Path) -> None:
     hip = tmp_path / "scene.hip"
     hip.write_bytes(b"hip")
     runtime = FakeRuntime(tmp_path)
+    fake_run = FakeHythonRun()
 
-    result = HipDumpService(runtime=runtime).dump(
+    result = HipDumpService(runtime=runtime, run=fake_run).dump(
         hip,
         requested_version=None,
     )

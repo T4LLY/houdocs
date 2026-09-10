@@ -82,12 +82,13 @@ The runtime-reported Houdini version SHALL be checked against an explicitly or c
 
 ### Requirement: Use one shared one-shot hython execution boundary
 
-HouDocs SHALL encapsulate selected-hython subprocess invocation, environment construction, stdout/stderr capture, timeout handling, and temporary source execution in a reusable hython runner. Init-specific probe code and HIP dump code SHALL consume this runner instead of implementing their own Houdini executable discovery or subprocess environment logic. One-shot operations SHALL NOT open a Houdini command port or require `hcommand`.
+HouDocs SHALL encapsulate selected-hython subprocess invocation, environment construction, stdout/stderr capture, timeout handling, and script execution in a reusable hython runner. Init-specific probe code and HIP dump code SHALL consume this runner instead of implementing their own Houdini executable discovery or subprocess environment logic. Houdini-side workers SHALL be self-contained scripts and SHALL NOT depend on HouDocs runtime packages inside the hython environment. One-shot operations SHALL NOT open a Houdini command port or require `hcommand`.
 
 #### Scenario: Run the initialization probe
 - **WHEN** initialization needs runtime metadata
 - **THEN** the init probe is executed through the shared hython runner
-- **AND** the probe owns only its result contract, not process-discovery or environment setup
+- **AND** the probe owns only its worker/result contract, not process-discovery or environment setup
+- **AND** the worker is executed as a standalone script rather than generated as a host-side Python source string
 
 #### Scenario: Run another one-shot Houdini operation
 - **WHEN** HIP dumping needs to load and inspect a HIP

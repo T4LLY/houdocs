@@ -85,22 +85,6 @@ def test_hython_runner_executes_selected_hython_with_shared_environment(
     assert kwargs["env"]["PATH"].split(";")[0] == str(installation.bin_dir)
 
 
-def test_hython_runner_executes_temporary_source(tmp_path: Path) -> None:
-    installation = _installation(tmp_path)
-    captured: dict[str, object] = {}
-
-    def fake_run(args, **kwargs):
-        script = Path(args[2])
-        captured["source"] = script.read_text(encoding="utf-8")
-        captured["name"] = script.name
-        return subprocess.CompletedProcess(args, 0, "", "")
-
-    runner = HythonRunner(installation, run=fake_run, platform="win32")
-    runner.execute_source("VALUE = 1", filename="probe.py")
-
-    assert captured == {"source": "VALUE = 1", "name": "probe.py"}
-
-
 def test_hython_runner_normalizes_timeout_to_shared_error(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
     script = tmp_path / "worker.py"

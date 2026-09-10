@@ -134,16 +134,15 @@ def test_runtime_payload_rejects_invalid_nested_node_metadata(tmp_path: Path) ->
     assert "folder_path" in (caught.value.error.detail or "")
 
 
-def _write_probe_result_from_source(source: str, payload: dict[str, object]) -> None:
+
+def _write_probe_result(arguments: tuple[object, ...], payload: dict[str, object]) -> None:
     import json
-    import re
 
-    matches = re.findall(r"Path\((\"(?:\\.|[^\"])*\")\)\.write_text", source)
-    assert matches
-    Path(json.loads(matches[-1])).write_text(json.dumps(payload), encoding="utf-8")
+    assert arguments[0] == "--output"
+    Path(arguments[1]).write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_probe_hython_executes_init_probe_through_shared_runner(tmp_path: Path) -> None:
+def test_probe_hython_executes_init_worker_through_shared_runner(tmp_path: Path) -> None:
     import subprocess
 
     from houdocs.init.probe import probe_hython
@@ -152,11 +151,11 @@ def test_probe_hython_executes_init_probe_through_shared_runner(tmp_path: Path) 
     help_root.mkdir()
 
     class Runner:
-        def execute_source(self, source: str, *, filename: str = "command.py"):
-            assert filename == "init-probe.py"
-            assert "hou.applicationVersionString" in source
-            _write_probe_result_from_source(
-                source,
+        def execute_script(self, script: Path, arguments=()):
+            assert script.name == "worker.py"
+            assert script.parent.name == "init"
+            _write_probe_result(
+                tuple(arguments),
                 {
                     "houdini_version": "22.0.429",
                     "help_directories": [str(help_root)],
@@ -180,10 +179,10 @@ def test_probe_hython_rejects_runtime_version_mismatch(tmp_path: Path) -> None:
     help_root.mkdir()
 
     class Runner:
-        def execute_source(self, source: str, *, filename: str = "command.py"):
-            del filename
-            _write_probe_result_from_source(
-                source,
+        def execute_script(self, script: Path, arguments=()):
+            del script
+            _write_probe_result(
+                tuple(arguments),
                 {
                     "houdini_version": "22.0.430",
                     "help_directories": [str(help_root)],
@@ -203,8 +202,8 @@ def test_probe_hython_maps_runner_failure_to_runtime_probe_error() -> None:
     from houdocs.init.probe import probe_hython
 
     class Runner:
-        def execute_source(self, source: str, *, filename: str = "command.py"):
-            del source, filename
+        def execute_script(self, script: Path, arguments=()):
+            del script, arguments
             raise HythonExecutionError("failed", detail="worker failed")
 
     with pytest.raises(HouDocsError) as caught:

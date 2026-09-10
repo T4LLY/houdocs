@@ -5,7 +5,6 @@ import os
 import posixpath
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Mapping, Sequence
 
@@ -78,25 +77,6 @@ class HythonRunner:
                 f"Failed to start hython: {self.installation.hython}",
                 detail=str(exc),
             ) from exc
-
-    def execute_source(
-        self,
-        source: str,
-        *,
-        filename: str = "command.py",
-        arguments: Sequence[str | Path] = (),
-        timeout_seconds: float | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        if not filename or Path(filename).name != filename:
-            raise ValueError("Hython source filename must be a file name.")
-        with tempfile.TemporaryDirectory(prefix="houdocs-hython-") as temporary:
-            script = Path(temporary) / filename
-            script.write_text(source, encoding="utf-8")
-            return self.execute_script(
-                script,
-                arguments,
-                timeout_seconds=timeout_seconds,
-            )
 
 
 def subprocess_environment_for(

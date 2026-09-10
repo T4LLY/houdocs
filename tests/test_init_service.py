@@ -23,18 +23,14 @@ class FakeRunner:
         self.snapshot = snapshot
         self.root = installation.root.parent / "fake-houdini-session"
 
-    def execute_source(
+    def execute_script(
         self,
-        source: str,
-        *,
-        filename: str = "command.py",
+        script: Path,
+        arguments=(),
     ) -> subprocess.CompletedProcess[str]:
-        import re
-
-        del filename
-        matches = re.findall(r"Path\((\"(?:\\.|[^\"])*\")\)\.write_text", source)
-        assert matches
-        Path(json.loads(matches[-1])).write_text(
+        assert script.name == "worker.py"
+        assert tuple(arguments)[0] == "--output"
+        Path(tuple(arguments)[1]).write_text(
             json.dumps(self.snapshot.payload),
             encoding="utf-8",
         )

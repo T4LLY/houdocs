@@ -345,14 +345,24 @@ def run_worker(
                     emitted,
                 )
                 del root_data
+
+            errors = {
+                "fallback_roots": fallback_roots,
+                "degraded_nodes": degraded_nodes,
+            }
+            first = _write_raw_member(
+                raw_handle,
+                "errors",
+                errors,
+                first=first,
+            )
             raw_handle.write("}")
 
         _write_json(
             status_path,
             {
                 "ok": True,
-                "fallback_roots": fallback_roots,
-                "degraded_nodes": degraded_nodes,
+                "errors": errors,
             },
         )
         return 0

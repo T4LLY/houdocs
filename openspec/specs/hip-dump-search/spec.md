@@ -16,7 +16,7 @@ HouDocs SHALL expose `houdocs hip dump` and `houdocs hip search` under the top-l
 
 ### Requirement: Dump one HIP with the selected Houdini version
 
-The public dump command SHALL be `houdocs hip dump --file <HIP_FILE> [--output <DUMP_DIRECTORY>] [--houdini-version <VERSION>]`. Houdini version resolution SHALL use the same explicit-option-over-configuration precedence as `houdocs init`.
+The public dump command SHALL be `houdocs hip dump --file <HIP_FILE> [--output <DUMP_DIRECTORY>] [--houdini-version <VERSION>] [--timeout <SECONDS>]`. Houdini version resolution SHALL use the same explicit-option-over-configuration precedence as `houdocs init`. `--timeout` SHALL control the headless dump subprocess timeout in seconds, SHALL default to 120 seconds, and SHALL reject non-positive or non-finite values.
 
 #### Scenario: Select a Houdini build explicitly
 - **WHEN** the caller runs `houdocs hip dump --file scene.hip --houdini-version 22.0.429`
@@ -60,26 +60,36 @@ Each searchable JSON file SHALL represent one Houdini network. Editable child ne
 - **WHEN** `/obj/geo1` is represented by `search/obj/geo1.json`
 - **THEN** its parent node refers to `obj/geo1.json`
 
+### Requirement: Report degraded capture without failing the dump
+
+When native capture falls back to a reduced representation, the dump SHALL remain successful. `raw.json` SHALL contain a top-level `errors` object with `fallback_roots` and `degraded_nodes` arrays describing the degraded captures. Normal stdout SHALL report only the total number of those entries in addition to the dump path.
+
+#### Scenario: One root and two nodes use fallback capture
+- **WHEN** one root and two nodes require degraded capture
+- **THEN** `raw.json.errors` preserves those three diagnostics
+- **AND** stdout contains `"errors":3`
+
 ### Requirement: Keep dump stdout minimal
 
-A successful dump SHALL write only the resolved dump directory to stdout as compact JSON.
+A successful dump SHALL write only the resolved dump directory and degraded-capture error count to stdout as compact JSON.
 
-#### Scenario: Dump succeeds
-- **WHEN** HIP dumping completes successfully
-- **THEN** stdout is equivalent to `{"output":"/path/to/dump"}`
+#### Scenario: Dump succeeds without degraded capture
+- **WHEN** HIP dumping completes successfully without fallback capture
+- **THEN** stdout is equivalent to `{"output":"/path/to/dump","errors":0}`
 - **AND** stdout contains no raw data, shard contents, worker status, or node data
 
-### Requirement: Search JSON shards directly with mmap
+### Requirement: Parse searchable JSON before matching values
 
-The public search command SHALL be `houdocs hip search <QUERY> --root <SEARCH_ROOT> --output <OUTPUT_JSON>`. HouDocs SHALL recursively enumerate JSON files below `--root`, open each candidate read-only with `mmap`, and perform a literal UTF-8 byte prefilter. Files without the query byte sequence SHALL NOT be JSON-parsed. HouDocs SHALL create no search index and no search database.
+The public search command SHALL be `houdocs hip search <QUERY> --root <SEARCH_ROOT> --output <OUTPUT_JSON>`. HouDocs SHALL recursively enumerate and JSON-parse every JSON file below `--root`, then perform literal matching against decoded scalar node-field values. It SHALL NOT use serialized JSON bytes as a prefilter, so JSON escaping SHALL NOT change whether a decoded field matches the query. HouDocs SHALL create no search index and no search database. A query containing only whitespace SHALL fail with `hip_search_query_empty`.
 
-#### Scenario: Query is absent from a shard
-- **WHEN** the literal query byte sequence is absent from a JSON shard
-- **THEN** that shard is skipped without JSON parsing
+#### Scenario: Query contains a decoded newline
+- **WHEN** a field contains a newline represented as an escape sequence in the JSON file
+- **AND** the query contains that decoded newline
+- **THEN** the field can match after JSON parsing
 
 ### Requirement: Resolve hits to node fields
 
-After the mmap prefilter matches a shard, HouDocs SHALL parse that shard and resolve matches within scalar node fields. A hit SHALL contain the Houdini node path, search-root-relative file path, RFC 6901 JSON Pointer for the matched scalar field, occurrence count, and reference token count for the full matched field. The token count SHALL use HouDocs' OpenAI `o200k_base` counter.
+After parsing a shard, HouDocs SHALL resolve matches within scalar node fields. A hit SHALL contain the Houdini node path, search-root-relative file path, RFC 6901 JSON Pointer for the matched scalar field, occurrence count, and reference token count for the full matched field. The token count SHALL use HouDocs' OpenAI `o200k_base` counter.
 
 #### Scenario: Query occurs repeatedly in one field
 - **WHEN** one parameter field contains the query three times

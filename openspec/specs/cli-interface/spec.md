@@ -18,7 +18,7 @@ HouDocs SHALL expose exactly `init`, `search`, `read`, `sections`, `node`, `hom`
 
 ### Requirement: Keep HIP operations grouped under hip
 
-The top-level `hip` command SHALL expose `dump` and `search` subcommands. HIP dump MAY expose `--file`, `--output`, and `--houdini-version`; HIP search MAY expose `--root` and `--output`. HIP-specific options SHALL NOT be added to the documentation `search` command.
+The top-level `hip` command SHALL expose `dump` and `search` subcommands. HIP dump MAY expose `--file`, `--output`, `--houdini-version`, and `--timeout`; HIP search MAY expose `--root` and `--output`. HIP-specific options SHALL NOT be added to the documentation `search` command.
 
 #### Scenario: Inspect HIP command help
 - **WHEN** the caller requests `houdocs hip --help`

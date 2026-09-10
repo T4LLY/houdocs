@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 import zipfile
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.bookish import BookishDocumentParser
 from houdocs.docs.index import DocumentIndexer, classify_document
+from houdocs.docs.models import Document, DocumentSection
+from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.docs.source import cache_bookish_trees
 
@@ -48,6 +51,20 @@ def test_loose_txt_precedes_archive_member_in_same_root(tmp_path: Path) -> None:
 
     assert [item.relative_path for item in cached] == ["commands/opadd.txt"]
     assert cached[0].cached_path.read_text(encoding="utf-8") == "= Loose =\n"
+
+
+def test_archive_members_cannot_escape_cache_with_windows_separators(tmp_path: Path) -> None:
+    source = tmp_path / "help"
+    source.mkdir()
+    with zipfile.ZipFile(source / "commands.zip", "w") as archive:
+        archive.writestr(r"..\..\escape.txt", "escape")
+        archive.writestr("safe.txt", "= Safe =\n")
+
+    destination = tmp_path / "cache"
+    cached = cache_bookish_trees((source,), destination)
+
+    assert [item.relative_path for item in cached] == ["commands/safe.txt"]
+    assert not (tmp_path / "escape.txt").exists()
 
 
 def test_invalid_archive_is_reported_and_other_documents_continue(
@@ -167,7 +184,7 @@ def test_parse_failure_is_reported_without_partial_document(tmp_path: Path) -> N
 def test_initialize_docs_database_contains_documents_and_sections_schema(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "docs.db")
     assert repository.all_documents() == []
-    with sqlite3.connect(tmp_path / "docs.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "docs.db")) as connection:
         tables = {
             row[0]
             for row in connection.execute(
@@ -293,3 +310,42 @@ def test_section_reads_use_single_query_and_preserve_document_heading_context(
     section = repository.section(child_id)
     assert len(statements) == 1
     assert section.heading_path == ("Alpha", "Child")
+
+
+def test_anonymous_section_path_uses_one_based_parser_ordinal() -> None:
+    section = DocumentSection(
+        section_id="doc#1",
+        document_id="doc",
+        ordinal=1,
+        anchor=None,
+        heading=None,
+        heading_path=(),
+        heading_level=None,
+        kind="concept",
+        content_hash="hash",
+        token_count=1,
+        text="anonymous",
+    )
+
+    assert DocumentReader._section_path(section) == ["section 1"]
+
+
+def test_hash_only_section_name_does_not_match_anonymous_section(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "docs.db")
+    document = Document("doc", "Page", "page.txt", "concept", None)
+    section = DocumentSection(
+        section_id="doc#1",
+        document_id="doc",
+        ordinal=1,
+        anchor=None,
+        heading=None,
+        heading_path=(),
+        heading_level=None,
+        kind="concept",
+        content_hash="hash",
+        token_count=1,
+        text="anonymous",
+    )
+    repository.insert_document(document, [section])
+
+    assert repository.sections_matching("doc", "#") == []

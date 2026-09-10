@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 from pathlib import Path
@@ -67,7 +68,7 @@ def _index_base_documents(source: Path, state: Path) -> DocumentRepository:
 
 def test_specialized_schema_is_created_in_docs_database(tmp_path: Path) -> None:
     initialize_docs_database(tmp_path / "docs.db")
-    with sqlite3.connect(tmp_path / "docs.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "docs.db")) as connection:
         tables = {
             row[0]
             for row in connection.execute(
@@ -314,7 +315,7 @@ def test_python_index_builds_direct_symbol_rows_without_body_duplication(
     ).index_all()
 
     assert result == {"documents": 2, "symbols": 4, "duplicates": 0, "failed": 0}
-    with sqlite3.connect(state / "docs.db") as connection:
+    with closing(sqlite3.connect(state / "docs.db")) as connection:
         connection.row_factory = sqlite3.Row
         method = connection.execute(
             "SELECT * FROM python_documents WHERE symbol = ?", ("hou.Node.setInput",)
@@ -368,7 +369,7 @@ xyzdist(0, P);
     ).index_all()
 
     assert result == {"documents": 1, "functions": 1, "duplicates": 0, "failed": 0}
-    with sqlite3.connect(state / "docs.db") as connection:
+    with closing(sqlite3.connect(state / "docs.db")) as connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             "SELECT * FROM vex_documents WHERE function_name = 'xyzdist'"

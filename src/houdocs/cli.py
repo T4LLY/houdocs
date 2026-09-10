@@ -11,7 +11,7 @@ from houdocs.config import HouDocsConfig, load_config, resolve_requested_version
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
-from houdocs.hip.dump import HipDumpService
+from houdocs.hip.dump import HIP_DUMP_TIMEOUT_SECONDS, HipDumpService
 from houdocs.hip.search import HipSearchService
 from houdocs.init.progress import InitProgress
 from houdocs.init.service import InitService
@@ -334,6 +334,10 @@ def hip_dump_command(
         str | None,
         typer.Option("--houdini-version", help="Houdini version to use for the dump."),
     ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Headless HIP dump timeout in seconds."),
+    ] = HIP_DUMP_TIMEOUT_SECONDS,
 ) -> None:
     def action() -> None:
         config = load_config()
@@ -342,8 +346,9 @@ def hip_dump_command(
             hip_file,
             requested_version=requested_version,
             output=output,
+            timeout_seconds=timeout,
         )
-        _emit({"output": str(result.output)})
+        _emit({"output": str(result.output), "errors": result.errors})
 
     _invoke(action)
 

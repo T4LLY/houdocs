@@ -104,4 +104,4 @@ class DocumentReader:
             return [section.heading]
         if section.anchor:
             return [f"#{section.anchor}"]
-        return [f"section {section.ordinal + 1}"]
+        return [f"section {section.ordinal}"]

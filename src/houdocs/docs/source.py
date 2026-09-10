@@ -3,7 +3,7 @@ from __future__ import annotations
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from houdocs.errors import HouDocsError
 
@@ -65,12 +65,8 @@ def cache_bookish_trees(
             try:
                 with zipfile.ZipFile(archive_path) as archive:
                     for member in sorted(archive.namelist()):
-                        member_path = PurePosixPath(member)
-                        if (
-                            member_path.is_absolute()
-                            or ".." in member_path.parts
-                            or member_path.suffix.casefold() != ".txt"
-                        ):
+                        member_path = _safe_archive_member(member)
+                        if member_path is None:
                             continue
                         relative = PurePosixPath(prefix, member_path).as_posix()
                         if relative in cached_by_relative:
@@ -100,6 +96,20 @@ def cache_bookish_trees(
                 )
 
     return [cached_by_relative[key] for key in sorted(cached_by_relative)]
+
+
+def _safe_archive_member(member: str) -> PurePosixPath | None:
+    windows_path = PureWindowsPath(member)
+    member_path = PurePosixPath(member.replace("\\", "/"))
+    if (
+        windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or member_path.is_absolute()
+        or ".." in member_path.parts
+        or member_path.suffix.casefold() != ".txt"
+    ):
+        return None
+    return member_path
 
 
 def _cache_bytes(

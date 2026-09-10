@@ -671,7 +671,7 @@ def test_hip_command_exposes_dump_and_search_only() -> None:
     assert "search" in result.stdout
 
 
-def test_hip_dump_stdout_contains_only_output_path(
+def test_hip_dump_stdout_contains_only_output_path_and_error_count(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -682,14 +682,15 @@ def test_hip_dump_stdout_contains_only_output_path(
     output = tmp_path / "dump"
     captured: dict[str, object] = {}
 
-    def fake_dump(self, hip_file, *, requested_version, output):
+    def fake_dump(self, hip_file, *, requested_version, output, timeout_seconds):
         del self
         captured.update(
             hip_file=hip_file,
             requested_version=requested_version,
             output=output,
+            timeout_seconds=timeout_seconds,
         )
-        return HipDumpResult(output=Path(output).resolve())
+        return HipDumpResult(output=Path(output).resolve(), errors=2)
 
     monkeypatch.setattr(HipDumpService, "dump", fake_dump)
 
@@ -704,15 +705,21 @@ def test_hip_dump_stdout_contains_only_output_path(
             str(output),
             "--houdini-version",
             "22.0.429",
+            "--timeout",
+            "45",
         ],
     )
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == {"output": str(output.resolve())}
+    assert json.loads(result.stdout) == {
+        "errors": 2,
+        "output": str(output.resolve()),
+    }
     assert captured == {
         "hip_file": hip,
         "requested_version": "22.0.429",
         "output": output,
+        "timeout_seconds": 45.0,
     }
 
 

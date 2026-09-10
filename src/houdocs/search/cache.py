@@ -42,8 +42,15 @@ class EmbeddingCache:
                     (profile, *batch),
                 ).fetchall()
             for row in rows:
-                vector = np.frombuffer(row["vector"], dtype=np.float32)
-                if len(vector) != int(row["dimensions"]):
+                try:
+                    vector = np.frombuffer(row["vector"], dtype=np.float32)
+                    dimensions = int(row["dimensions"])
+                except (TypeError, ValueError) as exc:
+                    raise HouDocsError(
+                        "embedding_cache_corrupt",
+                        "Embedding cache vector payload is invalid.",
+                    ) from exc
+                if len(vector) != dimensions:
                     raise HouDocsError(
                         "embedding_cache_corrupt",
                         "Embedding cache dimensions do not match payload.",

@@ -33,8 +33,9 @@ class FakeRuntime:
 
 
 class FakeHythonRun:
-    def __init__(self) -> None:
+    def __init__(self, *, errors: dict[str, object] | None = None) -> None:
         self.calls: list[tuple[list[str], dict[str, object]]] = []
+        self.errors = errors or {"fallback_roots": [], "degraded_nodes": []}
 
     def __call__(self, args, **kwargs):
         command = [str(value) for value in args]
@@ -44,7 +45,10 @@ class FakeHythonRun:
         output = values["--output"]
         output.joinpath("search").mkdir(parents=True, exist_ok=True)
         output.joinpath("raw.json").write_text("{}", encoding="utf-8")
-        values["--status"].write_text('{"ok":true}', encoding="utf-8")
+        values["--status"].write_text(
+            json.dumps({"ok": True, "errors": self.errors}),
+            encoding="utf-8",
+        )
         return subprocess.CompletedProcess(command, 0, "", "")
 
 
@@ -62,6 +66,7 @@ def test_hip_dump_uses_selected_hython_for_explicit_output(tmp_path: Path) -> No
     )
 
     assert result.output == output.resolve()
+    assert result.errors == 0
     assert runtime.selected == ["22.0.429"]
     assert (output / "raw.json").is_file()
     assert (output / "search").is_dir()
@@ -72,6 +77,55 @@ def test_hip_dump_uses_selected_hython_for_explicit_output(tmp_path: Path) -> No
     assert "--hip" in command
     assert str(hip.resolve()) in command
     assert kwargs["env"]["HFS"] == str(runtime.installation.root)
+    assert kwargs["timeout"] == 120.0
+
+
+def test_hip_dump_passes_timeout_and_reports_degradation_count(tmp_path: Path) -> None:
+    hip = tmp_path / "scene.hip"
+    hip.write_bytes(b"hip")
+    runtime = FakeRuntime(tmp_path)
+    fake_run = FakeHythonRun(
+        errors={
+            "fallback_roots": [{"root": "/stage", "mode": "metadata_off"}],
+            "degraded_nodes": [
+                {"path": "/obj/geo1/a", "mode": "parms_off"},
+                {"path": "/obj/geo1/b", "mode": "minimal"},
+            ],
+        }
+    )
+
+    result = HipDumpService(runtime=runtime, run=fake_run).dump(
+        hip,
+        requested_version="22.0.429",
+        timeout_seconds=45.0,
+    )
+
+    try:
+        assert result.errors == 3
+        assert fake_run.calls[0][1]["timeout"] == 45.0
+    finally:
+        import shutil
+
+        shutil.rmtree(result.output, ignore_errors=True)
+
+
+def test_hip_dump_rejects_invalid_timeout_before_creating_output(tmp_path: Path) -> None:
+    hip = tmp_path / "scene.hip"
+    hip.write_bytes(b"hip")
+    output = tmp_path / "dump"
+    runtime = FakeRuntime(tmp_path)
+
+    with pytest.raises(HouDocsError) as caught:
+        HipDumpService(runtime=runtime).dump(
+            hip,
+            requested_version=None,
+            output=output,
+            timeout_seconds=0,
+        )
+
+    assert caught.value.error.code == "hip_dump_timeout_invalid"
+    assert not output.exists()
+    assert runtime.selected == []
 
 
 def test_hip_dump_defaults_to_persistent_temp_output(tmp_path: Path) -> None:
@@ -192,6 +246,7 @@ def test_worker_writes_raw_and_search_tree_from_loaded_hip(
     assert raw["/obj"]["wrangle1"]["parms"]["snippet"]["value"].startswith(
         "setpointattrib"
     )
+    assert raw["errors"] == {"fallback_roots": [], "degraded_nodes": []}
     assert shard == {
         "network": "/obj",
         "nodes": {
@@ -203,3 +258,45 @@ def test_worker_writes_raw_and_search_tree_from_loaded_hip(
             }
         },
     }
+
+
+def test_worker_records_capture_degradation_in_raw_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Root:
+        def path(self) -> str:
+            return "/obj"
+
+        def children(self) -> list[object]:
+            return []
+
+        def childrenAsData(self, **kwargs):
+            if kwargs.get("metadata") is True:
+                raise RuntimeError("metadata capture failed")
+            return {}
+
+    fake_hou = SimpleNamespace(
+        hipFile=SimpleNamespace(load=lambda path, ignore_load_warnings: None),
+        node=lambda path: Root() if path == "/obj" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    output = tmp_path / "dump"
+    status = tmp_path / "control" / "status.json"
+    error = tmp_path / "control" / "error.txt"
+
+    assert run_worker(
+        hip_path=tmp_path / "scene.hip",
+        output_dir=output,
+        status_path=status,
+        error_path=error,
+    ) == 0
+
+    raw = json.loads((output / "raw.json").read_text(encoding="utf-8"))
+    worker_status = json.loads(status.read_text(encoding="utf-8"))
+    expected = {
+        "fallback_roots": [{"root": "/obj", "mode": "metadata_off"}],
+        "degraded_nodes": [],
+    }
+    assert raw["errors"] == expected
+    assert worker_status == {"ok": True, "errors": expected}

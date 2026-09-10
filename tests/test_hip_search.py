@@ -17,7 +17,7 @@ def _write_json(path: Path, value: object) -> None:
     )
 
 
-def test_hip_search_mmaps_candidates_and_aggregates_same_field(tmp_path: Path) -> None:
+def test_hip_search_parses_shards_and_aggregates_same_field(tmp_path: Path) -> None:
     root = tmp_path / "dump" / "search"
     text = "setpointattrib(0); before setpointattrib(1);"
     _write_json(
@@ -33,8 +33,10 @@ def test_hip_search_mmaps_candidates_and_aggregates_same_field(tmp_path: Path) -
             },
         },
     )
-    # This invalid file must never be parsed because the byte prefilter rejects it.
-    (root / "unrelated.json").write_text("not-json", encoding="utf-8")
+    _write_json(
+        root / "unrelated.json",
+        {"network": "/stage", "nodes": {}},
+    )
     output = tmp_path / "hits.json"
 
     summary = HipSearchService(token_counter=len).search(
@@ -103,3 +105,55 @@ def test_hip_search_rejects_empty_query(tmp_path: Path) -> None:
         HipSearchService(token_counter=len).search("", root=root, output=tmp_path / "hits.json")
 
     assert caught.value.error.code == "hip_search_query_empty"
+
+
+def test_hip_search_matches_json_escaped_field_content(tmp_path: Path) -> None:
+    root = tmp_path / "search"
+    text = "first line\nsecond line\t\\quoted\""
+    _write_json(
+        root / "obj.json",
+        {
+            "network": "/obj",
+            "nodes": {
+                "node": {
+                    "path": "/obj/node",
+                    "parms": {"text": text},
+                }
+            },
+        },
+    )
+    output = tmp_path / "hits.json"
+
+    summary = HipSearchService(token_counter=len).search(
+        "line\nsecond", root=root, output=output
+    )
+
+    assert summary["hits"] == 1
+    hit = json.loads(output.read_text(encoding="utf-8"))["hits"][0]
+    assert hit["pointer"] == "/nodes/node/parms/text"
+    assert hit["occurrences"] == 1
+
+
+def test_hip_search_rejects_whitespace_only_query(tmp_path: Path) -> None:
+    root = tmp_path / "search"
+    root.mkdir()
+
+    with pytest.raises(HouDocsError) as caught:
+        HipSearchService(token_counter=len).search(
+            "   ", root=root, output=tmp_path / "hits.json"
+        )
+
+    assert caught.value.error.code == "hip_search_query_empty"
+
+
+def test_hip_search_rejects_invalid_json_even_without_query_match(tmp_path: Path) -> None:
+    root = tmp_path / "search"
+    root.mkdir()
+    (root / "broken.json").write_text("not-json", encoding="utf-8")
+
+    with pytest.raises(HouDocsError) as caught:
+        HipSearchService(token_counter=len).search(
+            "needle", root=root, output=tmp_path / "hits.json"
+        )
+
+    assert caught.value.error.code == "hip_search_invalid_json"

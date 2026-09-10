@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -20,6 +21,7 @@ _ERROR_DETAIL_LIMIT = 4096
 @dataclass(frozen=True)
 class HipDumpResult:
     output: Path
+    errors: int
 
 
 class HipDumpService:
@@ -38,12 +40,19 @@ class HipDumpService:
         *,
         requested_version: str | None,
         output: Path | None = None,
+        timeout_seconds: float = HIP_DUMP_TIMEOUT_SECONDS,
     ) -> HipDumpResult:
         source = hip_file.expanduser().resolve()
         if not source.is_file():
             raise HouDocsError(
                 "hip_file_not_found",
                 f"HIP file does not exist: {hip_file}",
+            )
+
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise HouDocsError(
+                "hip_dump_timeout_invalid",
+                "HIP dump timeout must be a positive finite number of seconds.",
             )
 
         target = _create_output_directory(output)
@@ -69,9 +78,10 @@ class HipDumpService:
                         error_path,
                     ),
                     run=self._run,
+                    timeout_seconds=timeout_seconds,
                 )
 
-                _validate_worker_result(
+                status = _validate_worker_result(
                     completed.returncode,
                     completed.stdout,
                     completed.stderr,
@@ -85,7 +95,7 @@ class HipDumpService:
                     "HIP dump completed without the required output files.",
                 )
             success = True
-            return HipDumpResult(output=target)
+            return HipDumpResult(output=target, errors=_worker_error_count(status))
         finally:
             if not success:
                 shutil.rmtree(target, ignore_errors=True)
@@ -97,6 +107,7 @@ def _run_worker(
     arguments: tuple[str | Path, ...],
     *,
     run: Callable[..., subprocess.CompletedProcess[str]],
+    timeout_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
     args = [
         str(installation.hython),
@@ -112,7 +123,7 @@ def _run_worker(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=HIP_DUMP_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
             env=subprocess_environment_for(installation),
         )
     except subprocess.TimeoutExpired as exc:
@@ -120,7 +131,7 @@ def _run_worker(
         raise HouDocsError(
             "hip_dump_failed",
             "Failed to dump HIP in headless Houdini.",
-            detail=detail or f"Hython timed out after {HIP_DUMP_TIMEOUT_SECONDS:g} seconds.",
+            detail=detail or f"Hython timed out after {timeout_seconds:g} seconds.",
         ) from exc
     except OSError as exc:
         raise HouDocsError(
@@ -177,10 +188,10 @@ def _validate_worker_result(
     stderr: str,
     status_path: Path,
     error_path: Path,
-) -> None:
+) -> dict[str, object]:
     status = _read_status(status_path)
     if returncode == 0 and status.get("ok") is True:
-        return
+        return status
 
     detail = ""
     if error_path.is_file():
@@ -191,6 +202,17 @@ def _validate_worker_result(
         "hip_dump_failed",
         "Failed to dump HIP in headless Houdini.",
         detail=_clip(detail) or None,
+    )
+
+
+def _worker_error_count(status: dict[str, object]) -> int:
+    errors = status.get("errors")
+    if not isinstance(errors, dict):
+        return 0
+    fallback_roots = errors.get("fallback_roots")
+    degraded_nodes = errors.get("degraded_nodes")
+    return (len(fallback_roots) if isinstance(fallback_roots, list) else 0) + (
+        len(degraded_nodes) if isinstance(degraded_nodes, list) else 0
     )
 
 

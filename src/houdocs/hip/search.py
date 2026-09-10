@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import mmap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -43,7 +42,7 @@ class HipSearchService:
         root: Path,
         output: Path,
     ) -> dict[str, object]:
-        if not query:
+        if not query.strip():
             raise HouDocsError(
                 "hip_search_query_empty",
                 "HIP search query must not be empty.",
@@ -63,10 +62,9 @@ class HipSearchService:
                 "HIP search output must be outside the search root.",
             )
 
-        query_bytes = query.encode("utf-8")
         hits: list[HipSearchHit] = []
         for path in sorted(search_root.rglob("*.json")):
-            if not path.is_file() or not _contains_bytes(path, query_bytes):
+            if not path.is_file():
                 continue
             payload = _read_json(path)
             hits.extend(
@@ -82,20 +80,6 @@ class HipSearchService:
         _write_result(output_path, result)
         return {"hits": len(hits), "output": str(output_path)}
 
-
-def _contains_bytes(path: Path, query: bytes) -> bool:
-    try:
-        if path.stat().st_size == 0:
-            return False
-        with path.open("rb") as handle:
-            with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
-                return mapped.find(query) >= 0
-    except OSError as exc:
-        raise HouDocsError(
-            "hip_search_read_failed",
-            f"Unable to read HIP search file: {path}",
-            detail=str(exc),
-        ) from exc
 
 
 def _read_json(path: Path) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import sqlite3
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
+from houdocs.search.cache import EmbeddingCache
 from houdocs.search.dense import SQLiteVecIndex
 from houdocs.search.hybrid import HybridSearchBackend
 from houdocs.search.index import SearchIndexer
@@ -126,7 +128,7 @@ def _section(
 def test_search_schema_keeps_only_live_index_state(tmp_path: Path) -> None:
     database = tmp_path / "search.db"
     initialize_search_database(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         tables = {
             row[0]
             for row in connection.execute(
@@ -922,13 +924,11 @@ def test_existing_search_entry_without_fts_mapping_fails_closed(tmp_path: Path) 
 
 def test_fts_operational_error_propagates(tmp_path: Path) -> None:
     import houdocs.search.lexical as lexical_module
+    from houdocs.db.connection import connect_readonly
 
-    def _make_conn():
-        conn = sqlite3.connect(str(tmp_path / "test.db"))
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    index = lexical_module.SQLiteFtsIndex(_make_conn)
+    database = tmp_path / "test.db"
+    sqlite3.connect(database).close()
+    index = lexical_module.SQLiteFtsIndex(lambda: connect_readonly(database))
 
     with pytest.raises(sqlite3.OperationalError):
         index.search("test", namespaces=["docs"], limit=10)
@@ -962,3 +962,26 @@ def test_search_domain_selects_one_namespace_or_all_domains(tmp_path: Path) -> N
 
     service.search("node input")
     assert backend.namespaces == list(ALL_SEARCH_NAMESPACES)
+
+
+def test_embedding_cache_wraps_invalid_vector_blob(tmp_path: Path) -> None:
+    from houdocs.errors import HouDocsError
+
+    database = tmp_path / "search.db"
+    initialize_search_database(database)
+    from houdocs.db.connection import connect_writable
+
+    with connect_writable(database) as connection:
+        connection.execute(
+            """
+            INSERT INTO embedding_cache(embedding_profile_id, content_hash, dimensions, vector)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("p1", "hash", 1, b"abc"),
+        )
+        connection.commit()
+
+    with pytest.raises(HouDocsError) as caught:
+        EmbeddingCache(database).vectors("p1", ["hash"])
+
+    assert caught.value.error.code == "embedding_cache_corrupt"

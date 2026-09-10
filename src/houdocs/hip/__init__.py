@@ -1,1 +1,1 @@
-"""HIP dump and offline mmap search."""
+"""HIP dump and offline JSON search."""

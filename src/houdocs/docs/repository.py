@@ -84,6 +84,8 @@ class DocumentRepository:
 
     def sections_matching(self, document_id: str, section_name: str) -> list[DocumentSection]:
         key = section_name.casefold().strip().lstrip('#')
+        if not key:
+            return []
         sections = self.sections_for_document(document_id)
         matches = [
             section

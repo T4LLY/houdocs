@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 
@@ -72,7 +73,7 @@ def test_docs_database_initialization_owns_schema_and_wal(tmp_path: Path) -> Non
 
     initialize_docs_database(database)
 
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         tables = {
             row[0]
             for row in connection.execute(

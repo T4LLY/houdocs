@@ -17,30 +17,24 @@ from houdocs.houdini.runtime import HoudiniInstallation
 from houdocs.init.service import InitService
 
 
-class FakeSession:
+class FakeRunner:
     def __init__(self, installation: HoudiniInstallation, snapshot: RuntimeSnapshot) -> None:
         self.installation = installation
         self.snapshot = snapshot
         self.root = installation.root.parent / "fake-houdini-session"
 
-    def __enter__(self) -> "FakeSession":
-        self.root.mkdir(parents=True, exist_ok=True)
-        return self
-
-    def __exit__(self, exc_type, exc, traceback) -> None:
-        pass
-
-    def temporary_path(self, name: str) -> Path:
-        return self.root / name
-
-    def execute_python(
+    def execute_source(
         self,
         source: str,
         *,
         filename: str = "command.py",
     ) -> subprocess.CompletedProcess[str]:
-        del source, filename
-        self.temporary_path("runtime.json").write_text(
+        import re
+
+        del filename
+        matches = re.findall(r"Path\((\"(?:\\.|[^\"])*\")\)\.write_text", source)
+        assert matches
+        Path(json.loads(matches[-1])).write_text(
             json.dumps(self.snapshot.payload),
             encoding="utf-8",
         )
@@ -52,15 +46,15 @@ class FakeRuntime:
         self.installation = installation
         self.snapshot = snapshot
         self.selected: list[str | None] = []
-        self.sessions: list[HoudiniInstallation] = []
+        self.runners: list[HoudiniInstallation] = []
 
     def select(self, requested_version: str | None) -> HoudiniInstallation:
         self.selected.append(requested_version)
         return self.installation
 
-    def session(self, installation: HoudiniInstallation) -> FakeSession:
-        self.sessions.append(installation)
-        return FakeSession(installation, self.snapshot)
+    def runner(self, installation: HoudiniInstallation) -> FakeRunner:
+        self.runners.append(installation)
+        return FakeRunner(installation, self.snapshot)
 
 
 def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: Path) -> None:
@@ -70,8 +64,7 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     installation = HoudiniInstallation(
         root=install_root,
         bin_dir=install_root / "bin",
-        houdini=install_root / "bin" / "houdini.exe",
-        hcommand=install_root / "bin" / "hcommand.exe",
+        hython=install_root / "bin" / "hython.exe",
         version=(22, 0, 429),
     )
     payload = {
@@ -188,7 +181,7 @@ def test_init_service_persists_report_and_assist_compatible_node_dump(tmp_path: 
     assert result["issues"][0]["kind"] == "node_parameter_introspection_error"
     assert result["issues"][0]["symbol"] == "Sop/bad"
     assert runtime.selected == ["22.0.429"]
-    assert runtime.sessions == [installation]
+    assert runtime.runners == [installation]
 
 
 def _empty_runtime(tmp_path: Path) -> tuple[FakeRuntime, HoudiniInstallation]:
@@ -198,8 +191,7 @@ def _empty_runtime(tmp_path: Path) -> tuple[FakeRuntime, HoudiniInstallation]:
     installation = HoudiniInstallation(
         root=install_root,
         bin_dir=install_root / "bin",
-        houdini=install_root / "bin" / "houdini.exe",
-        hcommand=install_root / "bin" / "hcommand.exe",
+        hython=install_root / "bin" / "hython.exe",
         version=(22, 0, 429),
     )
     payload = {
@@ -385,8 +377,7 @@ def test_init_service_preserves_manual_overrides_across_full_rebuild(tmp_path: P
     installation = HoudiniInstallation(
         root=install_root,
         bin_dir=install_root / "bin",
-        houdini=install_root / "bin" / "houdini.exe",
-        hcommand=install_root / "bin" / "hcommand.exe",
+        hython=install_root / "bin" / "hython.exe",
         version=(22, 0, 429),
     )
     runtime_row = {

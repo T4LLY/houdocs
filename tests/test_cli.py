@@ -81,7 +81,7 @@ def test_cli_exposes_only_the_planned_top_level_commands() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("init", "search", "read", "sections", "node", "hom", "vex"):
+    for command in ("init", "search", "read", "sections", "node", "hom", "vex", "hip"):
         assert command in result.stdout
     assert "python" not in result.stdout
 
@@ -284,8 +284,7 @@ def test_init_existing_database_requires_explicit_y_confirmation(
     installation = HoudiniInstallation(
         root=installation_root,
         bin_dir=installation_root / "bin",
-        houdini=installation_root / "bin" / "houdini",
-        hcommand=installation_root / "bin" / "hcommand",
+        hython=installation_root / "bin" / "hython",
         version=(22, 0, 429),
     )
     monkeypatch.setattr(
@@ -466,8 +465,7 @@ def test_init_confirmation_also_guards_existing_search_database(
     installation = HoudiniInstallation(
         root=installation_root,
         bin_dir=installation_root / "bin",
-        houdini=installation_root / "bin" / "houdini",
-        hcommand=installation_root / "bin" / "hcommand",
+        hython=installation_root / "bin" / "hython",
         version=(22, 0, 429),
     )
     monkeypatch.setattr(
@@ -648,3 +646,95 @@ def test_node_command_lists_token_costs_and_reads_detail(
     }
     assert detail.exit_code == 0
     assert json.loads(detail.stdout) == {"description": "Amount."}
+
+
+def test_hip_command_exposes_dump_and_search_only() -> None:
+    result = runner.invoke(app, ["hip", "--help"])
+
+    assert result.exit_code == 0
+    assert "dump" in result.stdout
+    assert "search" in result.stdout
+
+
+def test_hip_dump_stdout_contains_only_output_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from houdocs.hip.dump import HipDumpResult, HipDumpService
+
+    hip = tmp_path / "scene.hip"
+    hip.write_bytes(b"hip")
+    output = tmp_path / "dump"
+    captured: dict[str, object] = {}
+
+    def fake_dump(self, hip_file, *, requested_version, output):
+        del self
+        captured.update(
+            hip_file=hip_file,
+            requested_version=requested_version,
+            output=output,
+        )
+        return HipDumpResult(output=Path(output).resolve())
+
+    monkeypatch.setattr(HipDumpService, "dump", fake_dump)
+
+    result = runner.invoke(
+        app,
+        [
+            "hip",
+            "dump",
+            "--file",
+            str(hip),
+            "--output",
+            str(output),
+            "--houdini-version",
+            "22.0.429",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"output": str(output.resolve())}
+    assert captured == {
+        "hip_file": hip,
+        "requested_version": "22.0.429",
+        "output": output,
+    }
+
+
+def test_hip_search_stdout_contains_only_hit_count_and_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from houdocs.hip.search import HipSearchService
+
+    root = tmp_path / "search"
+    root.mkdir()
+    output = tmp_path / "hits.json"
+
+    def fake_search(self, query, *, root, output):
+        del self
+        assert query == "needle"
+        assert root == tmp_path / "search"
+        assert output == tmp_path / "hits.json"
+        return {"hits": 1, "output": str(output.resolve())}
+
+    monkeypatch.setattr(HipSearchService, "search", fake_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "hip",
+            "search",
+            "needle",
+            "--root",
+            str(root),
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "hits": 1,
+        "output": str(output.resolve()),
+    }

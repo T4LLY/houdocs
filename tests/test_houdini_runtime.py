@@ -17,8 +17,7 @@ def _installation(root: Path, version: tuple[int, int, int]) -> HoudiniInstallat
     return HoudiniInstallation(
         root=root,
         bin_dir=bin_dir,
-        houdini=bin_dir / "houdini.exe",
-        hcommand=bin_dir / "hcommand.exe",
+        hython=bin_dir / "hython.exe",
         version=version,
     )
 
@@ -69,8 +68,7 @@ def test_discovery_finds_windows_sidefx_installations(tmp_path: Path) -> None:
     root = sidefx / "Houdini 22.0.429"
     bin_dir = root / "bin"
     bin_dir.mkdir(parents=True)
-    (bin_dir / "houdini.exe").write_bytes(b"")
-    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "hython.exe").write_bytes(b"")
 
     installs = discover_houdini_installations(
         environ={"ProgramFiles": str(tmp_path), "PATH": ""},
@@ -79,7 +77,7 @@ def test_discovery_finds_windows_sidefx_installations(tmp_path: Path) -> None:
 
     assert len(installs) == 1
     assert installs[0].version == (22, 0, 429)
-    assert installs[0].houdini == (bin_dir / "houdini.exe").resolve()
+    assert installs[0].hython == (bin_dir / "hython.exe").resolve()
 
 
 def test_discovery_reads_version_header_for_custom_installation_path(tmp_path: Path) -> None:
@@ -88,8 +86,7 @@ def test_discovery_reads_version_header_for_custom_installation_path(tmp_path: P
     header = root / "toolkit" / "include" / "SYS" / "SYS_Version.h"
     bin_dir.mkdir(parents=True)
     header.parent.mkdir(parents=True)
-    (bin_dir / "houdini.exe").write_bytes(b"")
-    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "hython.exe").write_bytes(b"")
     header.write_text('#define SYS_VERSION_FULL "22.0.429"\n', encoding="utf-8")
 
     installs = discover_houdini_installations(
@@ -106,8 +103,7 @@ def test_discovery_ignores_installation_when_version_cannot_be_identified(tmp_pa
     root = tmp_path / "houdini-current"
     bin_dir = root / "bin"
     bin_dir.mkdir(parents=True)
-    (bin_dir / "houdini.exe").write_bytes(b"")
-    (bin_dir / "hcommand.exe").write_bytes(b"")
+    (bin_dir / "hython.exe").write_bytes(b"")
 
     installs = discover_houdini_installations(
         environ={"HFS": str(root), "PATH": ""},

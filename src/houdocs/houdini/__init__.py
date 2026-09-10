@@ -1,1 +1,1 @@
-"""Shared Houdini installation and local-session support."""
+"""Shared Houdini installation discovery and one-shot hython execution."""

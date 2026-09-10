@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from houdocs.errors import HouDocsError
-from houdocs.houdini.session import HoudiniSession
+from houdocs.houdini.hython import HythonExecutionError, HythonRunner
 
 
 @dataclass(frozen=True)
@@ -51,24 +52,32 @@ class RuntimeSnapshot:
         return sum(1 for node in self.node_types if node.parameter_error)
 
 
-def probe_session(
-    session: HoudiniSession,
+def probe_hython(
+    runner: HythonRunner,
     *,
     requested_version: str | None,
 ) -> RuntimeSnapshot:
-    result_path = session.temporary_path("runtime.json")
-    completed = session.execute_python(
-        build_probe_script(result_path),
-        filename="init-probe.py",
-    )
-    if completed.returncode != 0 or not result_path.is_file():
-        detail = (completed.stderr or completed.stdout or "").strip() or None
-        raise HouDocsError(
-            "runtime_probe_failed",
-            "Houdini initialization probe failed.",
-            detail=detail,
-        )
-    snapshot = load_probe_snapshot(result_path)
+    with tempfile.TemporaryDirectory(prefix="houdocs-init-probe-") as temporary:
+        result_path = Path(temporary) / "runtime.json"
+        try:
+            completed = runner.execute_source(
+                build_probe_script(result_path),
+                filename="init-probe.py",
+            )
+        except HythonExecutionError as exc:
+            raise HouDocsError(
+                "runtime_probe_failed",
+                "Houdini initialization probe failed.",
+                detail=exc.detail or str(exc),
+            ) from exc
+        if completed.returncode != 0 or not result_path.is_file():
+            detail = (completed.stderr or completed.stdout or "").strip() or None
+            raise HouDocsError(
+                "runtime_probe_failed",
+                "Houdini initialization probe failed.",
+                detail=detail,
+            )
+        snapshot = load_probe_snapshot(result_path)
     _validate_requested_runtime_version(requested_version, snapshot.houdini_version)
     return snapshot
 

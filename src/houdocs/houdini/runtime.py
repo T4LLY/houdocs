@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from houdocs.errors import HouDocsError
-from houdocs.houdini.session import HoudiniSession
+from houdocs.houdini.hython import HythonRunner
 
 
 _VERSION_RE = re.compile(r"(?:Houdini\s*)?(\d+)\.(\d+)(?:\.(\d+))?", re.IGNORECASE)
@@ -23,8 +23,7 @@ _VERSION_HEADER_RE = re.compile(
 class HoudiniInstallation:
     root: Path
     bin_dir: Path
-    houdini: Path
-    hcommand: Path
+    hython: Path
     version: tuple[int, int, int]
 
     @property
@@ -33,20 +32,20 @@ class HoudiniInstallation:
 
 
 class HoudiniRuntime:
-    """Select installed Houdini builds and create reusable local sessions."""
+    """Select installed Houdini builds and create one-shot hython runners."""
 
     def __init__(
         self,
         *,
-        session_factory: Callable[[HoudiniInstallation], HoudiniSession] | None = None,
+        runner_factory: Callable[[HoudiniInstallation], HythonRunner] | None = None,
     ) -> None:
-        self._session_factory = session_factory or HoudiniSession
+        self._runner_factory = runner_factory or HythonRunner
 
     def select(self, requested_version: str | None) -> HoudiniInstallation:
         return select_houdini_installation(requested_version)
 
-    def session(self, installation: HoudiniInstallation) -> HoudiniSession:
-        return self._session_factory(installation)
+    def runner(self, installation: HoudiniInstallation) -> HythonRunner:
+        return self._runner_factory(installation)
 
 
 def discover_houdini_installations(
@@ -73,16 +72,10 @@ def discover_houdini_installations(
     elif platform_name.startswith("linux"):
         roots.extend(Path("/opt").glob("hfs*"))
 
-    path_hcommand = shutil.which("hcommand", path=env.get("PATH"))
-    if path_hcommand:
-        roots.append(Path(path_hcommand).resolve().parent.parent)
-
-    path_houdini = shutil.which("houdini", path=env.get("PATH"))
-    if path_houdini:
-        candidate = Path(path_houdini).resolve()
-        suffix = ".exe" if platform_name.startswith("win") else ""
-        if (candidate.parent / f"hcommand{suffix}").is_file():
-            roots.append(candidate.parent.parent)
+    for executable in ("hython", "hcommand", "houdini"):
+        discovered = shutil.which(executable, path=env.get("PATH"))
+        if discovered:
+            roots.append(Path(discovered).resolve().parent.parent)
 
     unique: dict[Path, HoudiniInstallation] = {}
     for root in roots:
@@ -141,9 +134,8 @@ def _installation_from_root(root: Path, platform_name: str) -> HoudiniInstallati
 
     suffix = ".exe" if platform_name.startswith("win") else ""
     bin_dir = resolved / "bin"
-    hcommand = bin_dir / f"hcommand{suffix}"
-    houdini = bin_dir / f"houdini{suffix}"
-    if not hcommand.is_file() or not houdini.is_file():
+    hython = bin_dir / f"hython{suffix}"
+    if not hython.is_file():
         return None
 
     version = _version_from_installation(resolved)
@@ -153,8 +145,7 @@ def _installation_from_root(root: Path, platform_name: str) -> HoudiniInstallati
     return HoudiniInstallation(
         root=resolved,
         bin_dir=bin_dir,
-        houdini=houdini,
-        hcommand=hcommand,
+        hython=hython,
         version=version,
     )
 

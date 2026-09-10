@@ -69,11 +69,10 @@ class InitService:
             progress_view.show(
                 f"Starting and inspecting Houdini {installation.version_string}"
             )
-            with self.runtime.session(installation) as session:
-                snapshot = runtime_probe.probe_session(
-                    session,
-                    requested_version=requested_version,
-                )
+            snapshot = runtime_probe.probe_hython(
+                self.runtime.runner(installation),
+                requested_version=requested_version,
+            )
             paths = VersionPaths.for_version(
                 snapshot.houdini_version, data_root=self.data_root
             )

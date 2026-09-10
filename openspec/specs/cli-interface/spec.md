@@ -6,14 +6,24 @@ Define the minimal public HouDocs command surface without exposing internal inde
 
 ## Requirements
 
-### Requirement: Expose seven top-level documentation commands
+### Requirement: Expose eight top-level commands
 
-HouDocs SHALL expose exactly the documentation workflow commands `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` at the top level in the initial public interface.
+HouDocs SHALL expose exactly `init`, `search`, `read`, `sections`, `node`, `hom`, `vex`, and `hip` at the top level in the public interface.
 
 #### Scenario: Inspect the top-level CLI
 - **WHEN** the caller requests top-level help
-- **THEN** `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` are exposed
+- **THEN** `init`, `search`, `read`, `sections`, `node`, `hom`, `vex`, and `hip` are exposed
 - **AND** no public `rebuild` command is exposed
+
+
+### Requirement: Keep HIP operations grouped under hip
+
+The top-level `hip` command SHALL expose `dump` and `search` subcommands. HIP dump MAY expose `--file`, `--output`, and `--houdini-version`; HIP search MAY expose `--root` and `--output`. HIP-specific options SHALL NOT be added to the documentation `search` command.
+
+#### Scenario: Inspect HIP command help
+- **WHEN** the caller requests `houdocs hip --help`
+- **THEN** `dump` and `search` are exposed as subcommands
+- **AND** documentation search remains a separate top-level command
 
 ### Requirement: Search may target one documentation domain
 

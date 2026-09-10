@@ -2,10 +2,10 @@ schema: spec-driven
 
 context: |
   Project: HouDocs
-  Runtime: Python >=3.11 external CLI. Houdini runtime access is permitted only during initialization; normal document lookup and search must work without a running Houdini process.
+  Runtime: Python >=3.11 external CLI. Houdini runtime access is permitted only during initialization and HIP dumping; normal document lookup, documentation search, and HIP search must work without a running Houdini process.
   HouDocs indexes SideFX Houdini Bookish help as derived state. The installed Houdini help plus runtime metadata observed during initialization are authoritative inputs; docs/search databases and extracted caches are rebuildable.
   Multiple Houdini versions may be initialized simultaneously. Derived state for one version must never overwrite another version.
-  The public CLI is intentionally small: init, search, read, node, python, and vex. Do not add host, port, executable, rebuild, or display-filter command options unless a later specification explicitly changes this contract.
+  The public CLI is intentionally small: init, search, read, sections, node, hom, vex, and hip. Do not add host, port, executable, rebuild, or display-filter command options unless a later specification explicitly changes this contract.
   A current-directory .houdocs.toml may select the default Houdini version used by the current working directory. Global configuration lives under the platformdirs houdocs namespace.
   AI-assisted unresolved node-parameter repair is an optional maintenance workflow and is not part of the normal HouDocs CLI.
   Command output is JSON for normal machine-readable results and application errors.
@@ -14,7 +14,7 @@ rules:
   specs:
     - Describe observable behavior and failure semantics; do not freeze implementation details unless they are architectural boundaries in the project context.
     - Every requirement must include at least one concrete WHEN/THEN scenario.
-    - Keep initialization-time Houdini runtime access separate from offline read/search behavior.
+    - Keep Houdini-backed init/dump execution separate from offline read/search behavior.
   design:
     - Identify authoritative inputs separately from rebuildable derived state.
     - Preserve version isolation for every persistent docs/search artifact.

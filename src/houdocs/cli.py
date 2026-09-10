@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import Annotated, Any, Callable
 
 import typer
@@ -10,6 +11,8 @@ from houdocs.config import HouDocsConfig, load_config, resolve_requested_version
 from houdocs.docs.read import DocumentReader
 from houdocs.docs.repository import DocumentRepository
 from houdocs.errors import HouDocsError
+from houdocs.hip.dump import HipDumpService
+from houdocs.hip.search import HipSearchService
 from houdocs.init.progress import InitProgress
 from houdocs.init.service import InitService
 from houdocs.node.read import NodeReader
@@ -33,6 +36,16 @@ app = typer.Typer(
     context_settings={"color": False},
     help="Indexed Houdini documentation CLI.",
 )
+
+
+hip_app = typer.Typer(
+    no_args_is_help=True,
+    rich_markup_mode=None,
+    pretty_exceptions_enable=False,
+    context_settings={"color": False},
+    help="Dump and search Houdini HIP files.",
+)
+app.add_typer(hip_app, name="hip")
 
 
 def _emit(value: Any, *, exit_code: int | None = None) -> None:
@@ -303,6 +316,52 @@ def vex_command(
                 repository=VexRepository(paths.database),
             ).read(function)
         )
+
+    _invoke(action)
+
+
+@hip_app.command("dump")
+def hip_dump_command(
+    hip_file: Annotated[
+        Path,
+        typer.Option("--file", help="HIP file to dump."),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Output directory. Defaults to an OS temp directory."),
+    ] = None,
+    houdini_version: Annotated[
+        str | None,
+        typer.Option("--houdini-version", help="Houdini version to use for the dump."),
+    ] = None,
+) -> None:
+    def action() -> None:
+        config = load_config()
+        requested_version = resolve_requested_version(houdini_version, config=config)
+        result = HipDumpService().dump(
+            hip_file,
+            requested_version=requested_version,
+            output=output,
+        )
+        _emit({"output": str(result.output)})
+
+    _invoke(action)
+
+
+@hip_app.command("search")
+def hip_search_command(
+    query: Annotated[str, typer.Argument(metavar="QUERY")],
+    root: Annotated[
+        Path,
+        typer.Option("--root", help="Root directory containing searchable HIP JSON shards."),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="JSON file to write search hits to."),
+    ],
+) -> None:
+    def action() -> None:
+        _emit(HipSearchService().search(query, root=root, output=output))
 
     _invoke(action)
 

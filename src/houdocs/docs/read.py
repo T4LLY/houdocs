@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from houdocs.docs.models import Document, DocumentSection
 from houdocs.docs.repository import DocumentRepository
+from houdocs.docs.text import compose_document_text
 from houdocs.errors import HouDocsError
 
 
@@ -23,9 +24,7 @@ class DocumentReader:
 
     def page(self, document: Document) -> dict[str, object]:
         sections = self.repository.sections_for_document(document.document_id)
-        return {
-            "text": "\n\n".join(item.text for item in sections if item.text).strip(),
-        }
+        return {"text": compose_document_text(sections)}
 
     def sections(self, page: str, *, pick: int | None = None) -> dict[str, object]:
         document = self._resolve_document(page, pick=pick)

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
-from houdocs.docs.read import DocumentReader
+from houdocs.docs.models import DocumentSection
 from houdocs.docs.repository import DocumentRepository
+from houdocs.docs.text import compose_document_text
 from houdocs.errors import HouDocsError
-from houdocs.python_docs.read import extract_hom_member, normalize_hom_symbol
+from houdocs.python_docs.text import extract_hom_member, normalize_hom_symbol
 from houdocs.python_docs.repository import PythonRepository
 from houdocs.search.domain import SearchDomain, namespace_for_document_kind
 from houdocs.search.hybrid import HybridSearchBackend
@@ -43,11 +44,18 @@ class SearchIndexer:
         *,
         embedding_progress: EmbeddingProgress | None = None,
     ) -> dict[str, int]:
+        sections = self.documents.all_sections()
+        page_texts = _document_texts_by_id(
+            sections,
+            document_ids=(
+                document.document_id for document in self.documents.all_documents()
+            ),
+        )
         grouped: EntryGroups = {}
         for entry_groups in (
-            self._document_entries(),
-            self._hom_entries(),
-            self._vex_entries(),
+            self._document_entries(sections),
+            self._hom_entries(page_texts),
+            self._vex_entries(page_texts),
         ):
             for document_id, entries in entry_groups.items():
                 grouped.setdefault(document_id, []).extend(entries)
@@ -79,9 +87,9 @@ class SearchIndexer:
 
         return {"entries": len(entries)}
 
-    def _document_entries(self) -> EntryGroups:
+    def _document_entries(self, sections: list[DocumentSection]) -> EntryGroups:
         grouped: EntryGroups = {}
-        for section in self.documents.all_sections():
+        for section in sections:
             namespace = namespace_for_document_kind(section.kind)
             if namespace is None:
                 continue
@@ -98,9 +106,7 @@ class SearchIndexer:
             )
         return grouped
 
-    def _hom_entries(self) -> EntryGroups:
-        document_reader = DocumentReader(self.documents)
-        page_cache: dict[str, str] = {}
+    def _hom_entries(self, page_texts: dict[str, str]) -> EntryGroups:
         grouped: EntryGroups = {}
         for record in self.python_documents.all():
             try:
@@ -112,11 +118,9 @@ class SearchIndexer:
             if canonical.casefold() != record.symbol.casefold():
                 continue
 
-            document = self.documents.document(record.document_id)
-            page_text = page_cache.get(record.document_id)
+            page_text = page_texts.get(record.document_id)
             if page_text is None:
-                page_text = str(document_reader.page(document)["text"])
-                page_cache[record.document_id] = page_text
+                continue
 
             text = page_text
             if record.kind in {"method", "function"} and record.member_name:
@@ -139,16 +143,12 @@ class SearchIndexer:
             )
         return grouped
 
-    def _vex_entries(self) -> EntryGroups:
-        document_reader = DocumentReader(self.documents)
-        page_cache: dict[str, str] = {}
+    def _vex_entries(self, page_texts: dict[str, str]) -> EntryGroups:
         grouped: EntryGroups = {}
         for record in self.vex_documents.all():
-            document = self.documents.document(record.document_id)
-            text = page_cache.get(record.document_id)
+            text = page_texts.get(record.document_id)
             if text is None:
-                text = str(document_reader.page(document)["text"])
-                page_cache[record.document_id] = text
+                continue
             readable_text = normalize_vex_text(
                 text,
                 record.function_name,
@@ -171,6 +171,22 @@ class SearchIndexer:
                 )
             )
         return grouped
+
+
+def _document_texts_by_id(
+    sections: list[DocumentSection],
+    *,
+    document_ids: Iterable[str],
+) -> dict[str, str]:
+    grouped: dict[str, list[DocumentSection]] = {
+        document_id: [] for document_id in document_ids
+    }
+    for section in sections:
+        grouped.setdefault(section.document_id, []).append(section)
+    return {
+        document_id: compose_document_text(document_sections)
+        for document_id, document_sections in grouped.items()
+    }
 
 
 def _specialized_content(

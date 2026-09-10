@@ -39,3 +39,11 @@ def test_ai_assist_remains_outside_public_houdocs_cli() -> None:
     assert "node_document_assist" not in cli
     assert (root / "tools" / "node_document_assist.py").is_file()
     assert (root / "tools" / "node-document-assist-ai-prompt.md").is_file()
+
+def test_search_indexer_does_not_depend_on_reader_modules() -> None:
+    root = Path(__file__).parents[1]
+    imports = _imports(root / "src" / "houdocs" / "search" / "index.py")
+
+    assert "houdocs.docs.read" not in imports
+    assert "houdocs.python_docs.read" not in imports
+    assert "houdocs.vex_docs.read" not in imports

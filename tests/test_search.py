@@ -672,6 +672,99 @@ def test_search_index_separates_domains_and_indexes_hom_symbols(tmp_path: Path) 
     assert token_counts["vex:xyzdist"] == _test_token_count(vex_section.text)
 
 
+def test_search_indexer_builds_specialized_text_from_bulk_document_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from houdocs.python_docs.models import PythonDocumentRecord
+    from houdocs.python_docs.repository import PythonRepository
+    from houdocs.vex_docs.models import VexDocumentRecord
+    from houdocs.vex_docs.repository import VexRepository
+
+    database = tmp_path / "docs.db"
+    docs = _docs(database)
+    hom_section = _section(
+        "hom",
+        0,
+        "hou.Node",
+        "hou.Node\n\n::`setInput(self, input_index, node)`:\n    Connect input.",
+    )
+    hom_section = DocumentSection(**{**hom_section.__dict__, "kind": "hom"})
+    docs.insert_document(
+        Document("hom", "hou.Node", "hom/hou/Node.txt", "hom", "22.0.429"),
+        [hom_section],
+    )
+    vex_section = _section("vex", 0, "xyzdist", "xyzdist body")
+    vex_section = DocumentSection(**{**vex_section.__dict__, "kind": "vex"})
+    docs.insert_document(
+        Document("vex", "xyzdist", "vex/functions/xyzdist.txt", "vex", "22.0.429"),
+        [vex_section],
+    )
+
+    hom = PythonRepository(database)
+    hom.insert_all(
+        [
+            PythonDocumentRecord("hou.Node", "hom", "hou", "Node", "class", ()),
+            PythonDocumentRecord(
+                "hou.Node.setInput",
+                "hom",
+                "hou.Node",
+                "setInput",
+                "method",
+                ("setInput(self, input_index, node)",),
+            ),
+        ]
+    )
+    vex = VexRepository(database)
+    vex.insert_all(
+        [VexDocumentRecord("xyzdist", "vex", (), (), None, (), None)]
+    )
+
+    calls = {"all_sections": 0, "all_documents": 0}
+    original_all_sections = docs.all_sections
+    original_all_documents = docs.all_documents
+
+    def all_sections():
+        calls["all_sections"] += 1
+        return original_all_sections()
+
+    def all_documents():
+        calls["all_documents"] += 1
+        return original_all_documents()
+
+    monkeypatch.setattr(docs, "all_sections", all_sections)
+    monkeypatch.setattr(docs, "all_documents", all_documents)
+    monkeypatch.setattr(
+        docs,
+        "document",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("SearchIndexer must not perform point document reads")
+        ),
+    )
+    monkeypatch.setattr(
+        docs,
+        "sections_for_document",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("SearchIndexer must not perform per-document section reads")
+        ),
+    )
+
+    result = SearchIndexer(
+        documents=docs,
+        python_documents=hom,
+        vex_documents=vex,
+        backend=_backend(
+            database=tmp_path / "search.db",
+            embeddings=FakeEmbeddings(),
+            dense_index=FakeDense(),
+        ),
+        embedding_profile="p1",
+        token_counter=_test_token_count,
+    ).index_all()
+
+    assert result == {"entries": 3}
+    assert calls == {"all_sections": 1, "all_documents": 1}
+
+
 def test_search_output_collapses_document_heading_metadata_to_path(
     tmp_path: Path,
 ) -> None:

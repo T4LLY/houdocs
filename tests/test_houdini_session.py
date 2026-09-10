@@ -33,6 +33,8 @@ def test_session_environment_forces_selected_hfs_and_bin_first(tmp_path: Path) -
     old_bin = tmp_path / "Houdini21.0.777" / "bin"
     environ = {
         "HFS": str(old_bin.parent),
+        "HH": str(old_bin.parent / "houdini"),
+        "HHP": str(old_bin.parent / "houdini" / "python3.11libs"),
         "PATH": ";".join(
             [str(old_bin), str(installation.bin_dir), str(tmp_path / "tools")]
         ),
@@ -45,6 +47,8 @@ def test_session_environment_forces_selected_hfs_and_bin_first(tmp_path: Path) -
     )
 
     assert env["HFS"] == str(installation.root)
+    assert "HH" not in env
+    assert "HHP" not in env
     parts = env["PATH"].split(";")
     assert parts[0] == str(installation.bin_dir)
     assert parts.count(str(installation.bin_dir)) == 1

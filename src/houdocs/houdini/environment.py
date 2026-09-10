@@ -18,6 +18,14 @@ def subprocess_environment_for(
 ) -> dict[str, str]:
     env = dict(os.environ if environ is None else environ)
     platform_name = sys.platform if platform is None else platform
+
+    # HH/HHP are derived by Houdini from the selected installation at startup.
+    # Inheriting explicit values can leave them pointing at a different Houdini
+    # version, because Houdini preserves inherited HH/HHP instead of rebuilding
+    # them. Remove stale parent values and let the selected Houdini set them.
+    env.pop("HH", None)
+    env.pop("HHP", None)
+
     env["HFS"] = str(installation.root)
 
     selected = str(installation.bin_dir)

@@ -82,7 +82,7 @@ The runtime-reported Houdini version SHALL be checked against an explicitly or c
 
 ### Requirement: Use a reusable local Houdini session boundary
 
-HouDocs SHALL encapsulate temporary Houdini process launch, local command-port discovery, `hcommand` execution, temporary session files, and process termination in a reusable Houdini session component. Init-specific probe code SHALL consume that session instead of managing ports or processes itself. The session SHALL let Houdini choose a free local command port and SHALL NOT reserve a port in a separate process before launch. HIP dumping MAY use the selected installation's `hython` directly for its independent one-shot worker and SHALL NOT change the init session lifecycle.
+HouDocs SHALL encapsulate temporary Houdini process launch, local command-port discovery, `hcommand` execution, temporary session files, and process termination in a reusable Houdini session component. Init-specific probe code SHALL consume that session instead of managing ports or processes itself. The session SHALL let Houdini choose a free local command port and SHALL NOT reserve a port in a separate process before launch. The retained dormant HIP dump implementation MAY use the selected installation's `hython` directly for its independent one-shot worker when exercised internally or re-enabled, and SHALL NOT change the init session lifecycle.
 
 #### Scenario: Run the initialization probe
 - **WHEN** initialization needs runtime metadata
@@ -90,8 +90,8 @@ HouDocs SHALL encapsulate temporary Houdini process launch, local command-port d
 - **AND** executes the init probe through that session's command port
 - **AND** the probe owns only its worker/result contract, not Houdini process or port management
 
-#### Scenario: Run HIP dumping
-- **WHEN** HIP dumping needs to load and inspect a HIP
+#### Scenario: Exercise the dormant HIP dump implementation
+- **WHEN** the retained HIP dump implementation is exercised internally or re-enabled and needs to load and inspect a HIP
 - **THEN** it may execute its self-contained worker with the selected installation's `hython`
 - **AND** it shares installation selection and environment construction without replacing the init session model
 

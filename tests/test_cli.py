@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from houdocs.cli import _init_summary, app
+from houdocs.cli import _init_summary, app, hip_app
 from houdocs.db.schema import initialize_docs_database
 from houdocs.docs.repository import DocumentRepository
 from houdocs.init.probe import RuntimeNodeSnapshot, RuntimeParameterSnapshot
@@ -89,11 +89,11 @@ def test_cli_exposes_only_the_planned_top_level_commands() -> None:
         "node": "Read node documentation.",
         "hom": "Read HOM documentation.",
         "vex": "Read VEX documentation.",
-        "hip": "Dump and search Houdini HIP files.",
     }
     for command, help_text in expected_help.items():
         assert command in result.stdout
         assert help_text in result.stdout
+    assert "hip" not in result.stdout
     assert "python" not in result.stdout
 
 
@@ -663,8 +663,15 @@ def test_node_command_lists_token_costs_and_reads_detail(
     assert json.loads(detail.stdout) == {"description": "Amount."}
 
 
-def test_hip_command_exposes_dump_and_search_only() -> None:
+def test_hip_command_is_intentionally_not_exposed() -> None:
     result = runner.invoke(app, ["hip", "--help"])
+
+    assert result.exit_code != 0
+    assert "No such command 'hip'" in result.output
+
+
+def test_dormant_hip_app_retains_dump_and_search() -> None:
+    result = runner.invoke(hip_app, ["--help"])
 
     assert result.exit_code == 0
     assert "dump" in result.stdout
@@ -695,9 +702,8 @@ def test_hip_dump_stdout_contains_only_output_path_and_error_count(
     monkeypatch.setattr(HipDumpService, "dump", fake_dump)
 
     result = runner.invoke(
-        app,
+        hip_app,
         [
-            "hip",
             "dump",
             "--file",
             str(hip),
@@ -743,9 +749,8 @@ def test_hip_search_stdout_contains_only_hit_count_and_output(
     monkeypatch.setattr(HipSearchService, "search", fake_search)
 
     result = runner.invoke(
-        app,
+        hip_app,
         [
-            "hip",
             "search",
             "needle",
             "--root",

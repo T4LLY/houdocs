@@ -45,7 +45,11 @@ hip_app = typer.Typer(
     context_settings={"color": False},
     help="Dump and search Houdini HIP files.",
 )
-app.add_typer(hip_app, name="hip")
+
+# HIP dump/search is intentionally dormant. The implementation is retained
+# because it may become useful again, but it currently adds little value to
+# HouDocs' documentation-focused public interface. Re-enable it by registering
+# hip_app with app when there is a concrete use case for the feature again.
 
 
 def _emit(value: Any, *, exit_code: int | None = None) -> None:

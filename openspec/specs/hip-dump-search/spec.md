@@ -2,24 +2,29 @@
 
 ## Purpose
 
-Define one-shot Houdini HIP dumping into AI-oriented JSON shards and index-free offline keyword search over those shards without sending large HIP-derived JSON through stdout.
+Document the retained one-shot Houdini HIP dumping and index-free offline keyword-search implementation while keeping that feature intentionally dormant in the public HouDocs CLI.
+
+## Status
+
+HIP dump/search currently adds little value to HouDocs' documentation-focused public interface. The implementation is retained for possible future use, but the `hip` command group SHALL remain disabled until a later specification explicitly re-enables it. The behavioral requirements below preserve the dormant implementation contract so future reactivation does not require reconstructing or rediscovering its behavior.
 
 ## Requirements
 
-### Requirement: Expose HIP dump and search as one command group
+### Requirement: Keep HIP dump and search disabled in the public CLI
 
-HouDocs SHALL expose `houdocs hip dump` and `houdocs hip search` under the top-level `hip` command. HIP search SHALL remain independent from the indexed documentation search command and SHALL NOT reuse its search database or backend.
+HouDocs SHALL retain the HIP dump/search implementation without registering the top-level `hip` command on the public CLI. HIP search SHALL remain independent from the indexed documentation search command and SHALL NOT reuse its search database or backend.
 
-#### Scenario: Inspect HIP commands
+#### Scenario: Inspect the public CLI
 - **WHEN** the caller requests `houdocs hip --help`
-- **THEN** `dump` and `search` are exposed
+- **THEN** the public CLI reports that `hip` is not a command
+- **AND** the retained HIP implementation remains available in the codebase for possible future use
 
-### Requirement: Dump one HIP with the selected Houdini version
+### Requirement: Preserve the dormant dump command contract
 
-The public dump command SHALL be `houdocs hip dump --file <HIP_FILE> [--output <DUMP_DIRECTORY>] [--houdini-version <VERSION>] [--timeout <SECONDS>]`. Houdini version resolution SHALL use the same explicit-option-over-configuration precedence as `houdocs init`. `--timeout` SHALL control the headless dump subprocess timeout in seconds, SHALL default to 120 seconds, and SHALL reject non-positive or non-finite values.
+The retained dormant dump command implementation SHALL preserve the contract `dump --file <HIP_FILE> [--output <DUMP_DIRECTORY>] [--houdini-version <VERSION>] [--timeout <SECONDS>]`. Houdini version resolution SHALL use the same explicit-option-over-configuration precedence as `houdocs init`. `--timeout` SHALL control the headless dump subprocess timeout in seconds, SHALL default to 120 seconds, and SHALL reject non-positive or non-finite values.
 
 #### Scenario: Select a Houdini build explicitly
-- **WHEN** the caller runs `houdocs hip dump --file scene.hip --houdini-version 22.0.429`
+- **WHEN** the retained dormant dump command is exercised with `--file scene.hip --houdini-version 22.0.429`
 - **THEN** HouDocs uses the installed Houdini `22.0.429` hython runtime
 
 ### Requirement: Create a new dump directory
@@ -78,9 +83,9 @@ A successful dump SHALL write only the resolved dump directory and degraded-capt
 - **THEN** stdout is equivalent to `{"output":"/path/to/dump","errors":0}`
 - **AND** stdout contains no raw data, shard contents, worker status, or node data
 
-### Requirement: Parse searchable JSON before matching values
+### Requirement: Preserve the dormant search command contract
 
-The public search command SHALL be `houdocs hip search <QUERY> --root <SEARCH_ROOT> --output <OUTPUT_JSON>`. HouDocs SHALL recursively enumerate and JSON-parse every JSON file below `--root`, then perform literal matching against decoded scalar node-field values. It SHALL NOT use serialized JSON bytes as a prefilter, so JSON escaping SHALL NOT change whether a decoded field matches the query. HouDocs SHALL create no search index and no search database. A query containing only whitespace SHALL fail with `hip_search_query_empty`.
+The retained dormant search command implementation SHALL preserve the contract `search <QUERY> --root <SEARCH_ROOT> --output <OUTPUT_JSON>`. HouDocs SHALL recursively enumerate and JSON-parse every JSON file below `--root`, then perform literal matching against decoded scalar node-field values. It SHALL NOT use serialized JSON bytes as a prefilter, so JSON escaping SHALL NOT change whether a decoded field matches the query. HouDocs SHALL create no search index and no search database. A query containing only whitespace SHALL fail with `hip_search_query_empty`.
 
 #### Scenario: Query contains a decoded newline
 - **WHEN** a field contains a newline represented as an escape sequence in the JSON file
@@ -125,7 +130,7 @@ The search output file SHALL contain an object with a `hits` array. Each hit SHA
 
 ### Requirement: HIP search is offline
 
-`houdocs hip search` SHALL depend only on the JSON files below `--root` and the normal HouDocs Python environment. It SHALL NOT start Houdini, import `hou`, open a Houdini command port, or access documentation search databases.
+The retained HIP search implementation SHALL depend only on the JSON files below `--root` and the normal HouDocs Python environment. It SHALL NOT start Houdini, import `hou`, open a Houdini command port, or access documentation search databases.
 
 #### Scenario: Houdini is not running
 - **WHEN** searchable HIP shards already exist

@@ -1,13 +1,13 @@
 # HouDocs
 
-HouDocs is an offline-first CLI for indexing, searching, and reading local SideFX Houdini documentation. It provides structured access to node documentation, HOM Python APIs, VEX functions, general Houdini documentation, and searchable HIP dumps.
+HouDocs is an offline-first CLI for indexing, searching, and reading local SideFX Houdini documentation. It provides structured access to node documentation, HOM Python APIs, VEX functions, and general Houdini documentation.
 
 After documentation has been initialized for a Houdini version, normal documentation search and read commands use local versioned indexes and do not require a running Houdini process.
 
 ## Requirements
 
 - Python 3.11 or later
-- A local SideFX Houdini installation for `houdocs init` and `houdocs hip dump`
+- A local SideFX Houdini installation for `houdocs init`
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
@@ -144,23 +144,9 @@ Read one VEX function directly:
 houdocs vex xyzdist
 ```
 
-### Dump and search HIP files
+### Dormant HIP implementation
 
-Create an AI-oriented JSON dump of a HIP file with the matching Houdini `hython` runtime:
-
-```bash
-houdocs hip dump --file path/to/scene.hip
-```
-
-The dump contains `raw.json` plus searchable network shards under `search/`. Use `--output` to choose a new dump directory or `--houdini-version` to select the Houdini build explicitly.
-
-Search the generated JSON shards without starting Houdini:
-
-```bash
-houdocs hip search "camera" --root path/to/dump/search --output hits.json
-```
-
-HIP search is an index-free literal search over decoded scalar node fields. The detailed hits are written to the requested JSON file while stdout stays compact.
+HouDocs retains its HIP dump and offline-search implementation for possible future use, but the `hip` command group is intentionally disabled and is not part of the current public CLI. In the current project scope, those operations add little value compared with HouDocs' documentation-focused interface, so the implementation is preserved without exposing an inactive feature to users.
 
 ### Configuration
 
@@ -173,7 +159,7 @@ For example, select the default Houdini reference version with:
 version = "22.0.429"
 ```
 
-An explicit `--houdini-version` passed to `init` or `hip dump` takes precedence over configured versions.
+An explicit `--houdini-version` passed to `init` takes precedence over configured versions.
 
 ### Common commands
 
@@ -197,7 +183,7 @@ houdocs sections Node
 Run `--help` at any command level to see its available options:
 
 ```bash
-houdocs hip dump --help
+houdocs init --help
 ```
 
 ## Related tools
@@ -214,7 +200,7 @@ Use it when an agent needs to control a live Houdini session or execute Houdini 
 
 `houdocs` provides structured search and retrieval over locally indexed Houdini documentation.
 
-It can be assigned to agents that need Houdini API and documentation access without exposing general runtime execution. Its HIP tools are separate one-shot dump and offline-search workflows rather than a live session interface.
+It can be assigned to agents that need Houdini API and documentation access without exposing general runtime execution. A dormant HIP dump/search implementation remains in the codebase for possible future use, but it is intentionally not exposed by the current CLI.
 
 ### Houlayout
 
@@ -225,7 +211,7 @@ It intentionally exposes a smaller node/layout-focused interface than the genera
 In short:
 
 - `houbridge` — general Houdini runtime and execution
-- `houdocs` — structured Houdini documentation search and HIP inspection
+- `houdocs` — structured Houdini documentation search and retrieval
 - `houlayout` — constrained node and network operations
 
 ## License

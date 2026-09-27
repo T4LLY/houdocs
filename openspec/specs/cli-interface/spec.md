@@ -6,24 +6,25 @@ Define the minimal public HouDocs command surface without exposing internal inde
 
 ## Requirements
 
-### Requirement: Expose eight top-level commands
+### Requirement: Expose seven top-level commands
 
-HouDocs SHALL expose exactly `init`, `search`, `read`, `sections`, `node`, `hom`, `vex`, and `hip` at the top level in the public interface.
+HouDocs SHALL expose exactly `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` at the top level in the public interface.
 
 #### Scenario: Inspect the top-level CLI
 - **WHEN** the caller requests top-level help
-- **THEN** `init`, `search`, `read`, `sections`, `node`, `hom`, `vex`, and `hip` are exposed
+- **THEN** `init`, `search`, `read`, `sections`, `node`, `hom`, and `vex` are exposed
+- **AND** `hip` is not exposed
 - **AND** no public `rebuild` command is exposed
 
 
-### Requirement: Keep HIP operations grouped under hip
+### Requirement: Keep HIP operations dormant
 
-The top-level `hip` command SHALL expose `dump` and `search` subcommands. HIP dump MAY expose `--file`, `--output`, `--houdini-version`, and `--timeout`; HIP search MAY expose `--root` and `--output`. HIP-specific options SHALL NOT be added to the documentation `search` command.
+The retained HIP dump/search implementation SHALL NOT be registered on the public HouDocs CLI. Its command handlers MAY remain grouped internally so the feature can be re-enabled later without redesigning the command surface. HIP-specific options SHALL NOT be added to the documentation `search` command while the feature is dormant.
 
-#### Scenario: Inspect HIP command help
+#### Scenario: Request the dormant HIP command
 - **WHEN** the caller requests `houdocs hip --help`
-- **THEN** `dump` and `search` are exposed as subcommands
-- **AND** documentation search remains a separate top-level command
+- **THEN** the public CLI reports that `hip` is not a command
+- **AND** documentation search remains available as a separate top-level command
 
 ### Requirement: Search may target one documentation domain
 

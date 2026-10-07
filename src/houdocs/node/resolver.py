@@ -48,7 +48,9 @@ def build_node_metadata(
     internal_name = node_doc.internal_name or ""
     lookup = strict_node_lookup(relative_path, node_doc)
     runtime = catalog.resolve(lookup) if lookup is not None else None
+    canonical_name: str | None
     if runtime is not None:
+        assert lookup is not None  # A runtime match requires a lookup.
         context = lookup.context
         internal_name = runtime.internal_name
         canonical_name = runtime.canonical_name
@@ -128,7 +130,7 @@ def build_node_metadata(
         "node_type_resolved": 0 if node_reason else 1,
         "node_type_unresolved": 1 if node_reason else 0,
     }
-    unresolved = {
+    unresolved: dict[str, list[dict[str, object]]] = {
         "node_types": []
         if node_reason is None
         else [

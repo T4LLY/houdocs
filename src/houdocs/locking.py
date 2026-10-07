@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib
 import os
+import sys
 from pathlib import Path
 from typing import BinaryIO
 
@@ -47,7 +49,7 @@ class OperationLock:
 
 
 def _lock_nonblocking(handle: BinaryIO) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         handle.seek(0, os.SEEK_END)
@@ -58,19 +60,18 @@ def _lock_nonblocking(handle: BinaryIO) -> None:
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         return
 
-    import fcntl
-
+    # fcntl is POSIX-only; load it only after the Windows branch.
+    fcntl = importlib.import_module("fcntl")
     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def _unlock(handle: BinaryIO) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         return
 
-    import fcntl
-
+    fcntl = importlib.import_module("fcntl")
     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

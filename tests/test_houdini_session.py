@@ -190,3 +190,20 @@ def test_startup_script_lets_houdini_choose_and_publish_port(tmp_path: Path) -> 
     assert 'hou.hscript("openport -a -q")' in source
     assert repr(str(port_path)) in source
     assert "temporary.replace(target)" in source
+
+def test_hcommand_timeout_returns_decoded_text(tmp_path: Path) -> None:
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=args[0],
+            timeout=1,
+            output=b"partial \xe3\x81\x82",
+            stderr=b"timeout details",
+        )
+
+    session = HoudiniSession(_installation(tmp_path), run=fake_run)
+    session._port = 1234
+    result = session.execute_hscript("echo test")
+
+    assert result.returncode == 124
+    assert result.stdout == "partial あ"
+    assert result.stderr == "timeout details"

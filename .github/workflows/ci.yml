@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: ${{ matrix.check }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        check: [ruff, pyright, mypy, pytest, openspec]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        if: matrix.check != 'openspec'
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - name: Install Python 3.12
+        if: matrix.check != 'openspec'
+        run: uv python install 3.12
+      - name: Sync locked dependencies
+        if: matrix.check != 'openspec'
+        run: uv sync --locked --group dev --python 3.12
+      - name: Ruff
+        if: matrix.check == 'ruff'
+        run: uvx --from ruff==0.15.22 ruff check src tests
+      - name: Pyright
+        if: matrix.check == 'pyright'
+        run: uv run --with pyright==1.1.414 pyright src
+      - name: Mypy
+        if: matrix.check == 'mypy'
+        run: uv run --with mypy==2.4.0 mypy src
+      - name: Pytest
+        if: matrix.check == 'pytest'
+        run: uv run --no-sync pytest
+      - name: Set up Node.js
+        if: matrix.check == 'openspec'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: OpenSpec strict validation
+        if: matrix.check == 'openspec'
+        run: npm exec --yes --package=@fission-ai/openspec@1.13.2 -- openspec validate --all --strict

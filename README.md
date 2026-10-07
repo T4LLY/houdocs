@@ -1,5 +1,7 @@
 # HouDocs
 
+[![CI](https://github.com/T4LLY/houdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/T4LLY/houdocs/actions/workflows/ci.yml)
+
 HouDocs is an offline-first CLI for indexing, searching, and reading local SideFX Houdini documentation. It provides structured access to node documentation, HOM Python APIs, VEX functions, and general Houdini documentation.
 
 After documentation has been initialized for a Houdini version, normal documentation search and read commands use local versioned indexes and do not require a running Houdini process.
@@ -181,6 +183,23 @@ Run `--help` at any command level to see its available options:
 ```bash
 houdocs init --help
 ```
+
+## Testing
+
+GitHub Actions runs Ruff, Pyright, Mypy, Pytest, and OpenSpec strict validation independently on native Ubuntu and Windows runners for pushes, pull requests, and manual runs. Python checks use Python 3.12; tests use fixtures instead of requiring a Houdini installation. Real Houdini initialization is not covered by CI.
+
+Run the same five checks locally on Windows, Linux, or WSL (Node.js 22 and uv are required):
+
+```powershell
+uv sync --locked --group dev --python 3.12
+uvx --from ruff==0.15.22 ruff check src tests
+uv run --with pyright==1.1.414 pyright src
+uv run --with mypy==2.4.0 mypy src
+uv run --no-sync pytest
+npm exec --yes --package=@fission-ai/openspec@1.13.2 -- openspec validate --all --strict
+```
+
+WSL checks Linux behavior only; the GitHub Actions Windows runner checks native Windows behavior.
 
 ## Related tools
 

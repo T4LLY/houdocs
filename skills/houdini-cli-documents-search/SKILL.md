@@ -9,8 +9,6 @@ HouDocs is a CLI tool for researching Houdini documentation.
 
 Use it to look up Houdini nodes, parameters, inputs and outputs, HOM Python APIs, VEX functions, and general documentation.
 
-The current public HouDocs interface is documentation-focused. Do not use or suggest `houdocs hip`; the retained HIP dump/search implementation is intentionally dormant because it currently adds little value to this workflow and is preserved only for possible future use.
-
 ## Basic Principles
 
 Retrieve only the information needed for the current task.

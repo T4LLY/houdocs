@@ -144,10 +144,6 @@ Read one VEX function directly:
 houdocs vex xyzdist
 ```
 
-### Dormant HIP implementation
-
-HouDocs retains its HIP dump and offline-search implementation for possible future use, but the `hip` command group is intentionally disabled and is not part of the current public CLI. In the current project scope, those operations add little value compared with HouDocs' documentation-focused interface, so the implementation is preserved without exposing an inactive feature to users.
-
 ### Configuration
 
 HouDocs stores global configuration in the platform-standard `houdocs` configuration directory. A `.houdocs.toml` file in the current working directory can override global settings for that directory without being created automatically.
@@ -200,7 +196,7 @@ Use it when an agent needs to control a live Houdini session or execute Houdini 
 
 `houdocs` provides structured search and retrieval over locally indexed Houdini documentation.
 
-It can be assigned to agents that need Houdini API and documentation access without exposing general runtime execution. A dormant HIP dump/search implementation remains in the codebase for possible future use, but it is intentionally not exposed by the current CLI.
+It can be assigned to agents that need Houdini API and documentation access without exposing general runtime execution.
 
 ### Houlayout
 

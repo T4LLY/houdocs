@@ -76,7 +76,7 @@ class HipSearchService:
                 )
             )
 
-        result = {"hits": [hit.to_dict() for hit in hits]}
+        result: dict[str, object] = {"hits": [hit.to_dict() for hit in hits]}
         _write_result(output_path, result)
         return {"hits": len(hits), "output": str(output_path)}
 

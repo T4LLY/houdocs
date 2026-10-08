@@ -87,7 +87,9 @@ def _related_override(
 
 
 def _safe_int(value: object, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+    if isinstance(value, (int, float, str, bytes, bytearray)):
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return default

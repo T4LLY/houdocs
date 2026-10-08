@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 
 from houdocs.node.models import (
     DocumentedField,
@@ -121,7 +121,7 @@ class _ParameterDecision:
     resolved_ids: list[str]
     source: str | None = None
     reason: str | None = None
-    missing_ids: list[str] = field(default_factory=list)
+    missing_ids: list[str] = dataclass_field(default_factory=list)
 
 
 def _index_runtime_parameters(
@@ -425,7 +425,9 @@ def _label_key(value: str) -> str:
 
 
 def _safe_int(value: object, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+    if isinstance(value, (int, float, str, bytes, bytearray)):
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return default

@@ -120,12 +120,11 @@ class InitService:
                     progress=progress_view.indexing if progress_view.enabled else None,
                 )
 
-            warning = lambda kind, detail, document, symbol: reporter.warning(
-                kind, detail, document=document, symbol=symbol
-            )
-            error = lambda kind, detail, document, symbol: reporter.error(
-                kind, detail, document=document, symbol=symbol
-            )
+            def warning(kind: str, detail: str, document: str | None, symbol: str | None) -> None:
+                reporter.warning(kind, detail, document=document, symbol=symbol)
+
+            def error(kind: str, detail: str, document: str | None, symbol: str | None) -> None:
+                reporter.error(kind, detail, document=document, symbol=symbol)
             with progress_view.phase("index node docs"):
                 node = NodeIndexer(
                     documents=repository,

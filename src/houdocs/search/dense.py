@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import sqlite3
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -23,7 +24,8 @@ def _serialize(vector: np.ndarray) -> bytes:
 
 def load_sqlite_vec(connection: sqlite3.Connection) -> None:
     try:
-        import sqlite_vec
+        # sqlite-vec has no typing marker; load its runtime extension on demand.
+        sqlite_vec = importlib.import_module("sqlite_vec")
 
         connection.enable_load_extension(True)
         try:

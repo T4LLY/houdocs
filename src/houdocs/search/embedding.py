@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 from houdocs.errors import HouDocsError
+
+if TYPE_CHECKING:
+    from model2vec import StaticModel
 
 
 class EmbeddingProvider(Protocol):
@@ -15,7 +18,7 @@ class EmbeddingProvider(Protocol):
 
 class Model2VecEmbeddingProvider:
     def __init__(self) -> None:
-        self._models: dict[str, object] = {}
+        self._models: dict[str, StaticModel] = {}
 
     def encode(self, texts: Sequence[str], profile: str) -> np.ndarray:
         if not texts:
@@ -24,7 +27,7 @@ class Model2VecEmbeddingProvider:
         if model is None:
             try:
                 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-                from huggingface_hub.utils import disable_progress_bars
+                from huggingface_hub.utils.tqdm import disable_progress_bars
                 from model2vec import StaticModel
 
                 with disable_progress_bars():

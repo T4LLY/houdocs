@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 from types import TracebackType
+from typing import Literal
 
 
 class _ManagedConnection(sqlite3.Connection):
@@ -11,9 +12,9 @@ class _ManagedConnection(sqlite3.Connection):
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool:
+    ) -> Literal[False]:
         try:
-            return bool(super().__exit__(exc_type, exc, traceback))
+            return super().__exit__(exc_type, exc, traceback)
         finally:
             self.close()
 

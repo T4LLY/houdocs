@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 from houdocs.errors import HouDocsError
 from houdocs.houdini.session import HoudiniSession
@@ -247,11 +248,11 @@ def _optional_integer(value: object, *, index: int, field: str) -> int | None:
     return value
 
 
-def _invalid_runtime_node(index: int, detail: str) -> None:
+def _invalid_runtime_node(index: int, detail: str) -> NoReturn:
     _invalid_runtime_field(f"node_types[{index}]", detail)
 
 
-def _invalid_runtime_field(location: str, detail: str) -> None:
+def _invalid_runtime_field(location: str, detail: str) -> NoReturn:
     raise HouDocsError(
         "runtime_probe_invalid",
         "Houdini initialization probe returned invalid node metadata.",

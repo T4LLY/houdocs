@@ -217,8 +217,8 @@ class HoudiniSession:
             return subprocess.CompletedProcess(
                 args=exc.cmd,
                 returncode=124,
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or "",
+                stdout=_timeout_output(exc.stdout),
+                stderr=_timeout_output(exc.stderr),
             )
         except OSError as exc:
             raise HouDocsError(
@@ -226,6 +226,12 @@ class HoudiniSession:
                 f"Failed to execute hcommand: {self.installation.hcommand}",
                 detail=str(exc),
             ) from exc
+
+
+def _timeout_output(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
 
 
 def _startup_script(port_path: Path) -> str:
